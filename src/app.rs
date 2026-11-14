@@ -520,12 +520,10 @@ impl LauncherApp {
         section(ui, &p, tr("Portable versions", "Portable verze"));
         card(ui, &p, |ui| {
             row_layout(ui, 48.0, |ui| {
-                let detail = match s.portable() {
-                    Some(d) => d.display().to_string(),
-                    None => tr("Off – choose a folder to download and update portable versions there", "Vypnuto – vyber složku, kam stahovat a aktualizovat portable verze").to_string(),
-                };
+                // the Downloads folder unless another one is chosen
+                let detail = s.portable().map(|d| d.display().to_string()).unwrap_or_default();
                 ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
-                    if s.portable().is_some() && Btn::new(tr("Turn off", "Vypnout")).show(ui, &p).clicked() {
+                    if !s.portable_dir.trim().is_empty() && Btn::new(tr("Downloads", "Stažené soubory")).tip(tr("Back to the Downloads folder", "Zpět do složky Stažené soubory")).show(ui, &p).clicked() {
                         acts.push(Action::ClearPortableDir);
                     }
                     if Btn::new(tr("Choose…", "Vybrat…")).show(ui, &p).clicked() {

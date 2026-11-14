@@ -137,7 +137,7 @@ pub fn remove_portable(app: &AppInfo, dir: &Path) -> Result<(), String> {
 /// HeMi Dark: the skins zip into the Downloads folder, shown in File Explorer.
 pub fn download_files(app: &AppInfo, release: &Release, progress: impl FnMut(f32)) -> Result<PathBuf, String> {
     let name = format!("{}-Skins.zip", app.id);
-    let downloads = std::env::var_os("USERPROFILE").map(PathBuf::from).unwrap_or_default().join("Downloads");
+    let downloads = crate::settings::downloads();
     let file = downloads.join(&name);
     fetch(release, &name, &file, progress)?;
     let _ = Command::new("explorer.exe").arg(format!("/select,{}", file.display())).spawn();

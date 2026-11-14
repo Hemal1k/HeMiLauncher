@@ -34,8 +34,9 @@ fn file() -> PathBuf {
 
 impl Settings {
     /// The folder of the portable versions, when one is chosen.
+    /// Where the portable versions go: the folder chosen in the settings, else the Downloads folder.
     pub fn portable(&self) -> Option<PathBuf> {
-        (!self.portable_dir.trim().is_empty()).then(|| PathBuf::from(self.portable_dir.trim()))
+        if self.portable_dir.trim().is_empty() { Some(downloads()) } else { Some(PathBuf::from(self.portable_dir.trim())) }
     }
 
     pub fn load() -> Settings {
@@ -101,4 +102,20 @@ pub fn register() {
     if let Ok(exe) = std::env::current_exe() {
         reg::write_user(r"Software\HeMi\HeMiLauncher", "Path", &exe.display().to_string());
     }
+}
+
+/// The Downloads folder of the user (a moved one too).
+pub fn downloads() -> PathBuf {
+    use windows_sys::Win32::System::Com::CoTaskMemFree;
+    use windows_sys::Win32::UI::Shell::{FOLDERID_Downloads, SHGetKnownFolderPath};
+    unsafe {
+        let mut p: windows_sys::core::PWSTR = std::ptr::null_mut();
+        if SHGetKnownFolderPath(&FOLDERID_Downloads, 0, std::ptr::null_mut(), &mut p) == 0 && !p.is_null() {
+            let len = (0..).take_while(|&i| *p.add(i) != 0).count();
+            let s = String::from_utf16_lossy(std::slice::from_raw_parts(p, len));
+            CoTaskMemFree(p as _);
+            return PathBuf::from(s);
+        }
+    }
+    std::env::var_os("USERPROFILE").map(PathBuf::from).unwrap_or_default().join("Downloads")
 }

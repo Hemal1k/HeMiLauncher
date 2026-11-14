@@ -32,9 +32,7 @@ Windows 10 / 11, x64 and ARM64. Nothing else needs to be installed.
 - **In the background**: after the start and every 4 hours it looks for new versions, shows a Windows notification, and can
   install them by itself (off by default). Closing the window hides it in the notification area; it can start with Windows.
 - **Checked downloads**: every installer and zip is compared with `SHA256SUMS.txt` of its release before it is run or unpacked.
-- **Portable versions**: choose a folder in the settings – the launcher downloads, updates, opens and removes the portable versions there.
-- **Checked downloads**: every installer and zip is compared with `SHA256SUMS.txt` of its release before it is run or unpacked.
-- **Portable versions**: choose a folder in the settings – the launcher downloads, updates, opens and removes the portable versions there.
+- **Portable versions**: downloaded into the Downloads folder (or a folder chosen in the settings) – the launcher updates, opens and removes them there too.
 - **Updates itself** – the installed version with its installer, the portable one by replacing its exe.
 - **The other HeMi apps** find it (`HKCU\Software\HeMi\HeMiLauncher`): when it is there they leave their updates to it, and
   HeMiDock shows its updates in the status bar.

@@ -1,0 +1,54 @@
+# Builds the downloads of a HeMiLauncher release - the same on a PC and in the GitHub workflow (.github/workflows/release.yml):
+#   build\dist\HeMiLauncher-Setup.exe            the installer (Inno Setup 6): x64, and the ARM64 program on Windows on ARM
+#   build\dist\HeMiLauncher-Portable.zip         just the program for x64 - the exe right in the zip
+#   build\dist\HeMiLauncher-Portable-arm64.zip   the same for Windows on ARM
+# Needs: Rust (stable, MSVC), Inno Setup 6, and for ARM64 the MSVC ARM64 build tools (on a PC without them ARM64 is
+# left out with a warning; the GitHub workflow always builds both). The version comes from Cargo.toml.
+param([switch]$NoArm)
+$ErrorActionPreference = 'Stop'
+$root = $PSScriptRoot
+Set-Location $root
+if (-not (Get-Command cargo -ErrorAction SilentlyContinue)) { $env:Path += ";$env:USERPROFILE\.cargo\bin" }
+$app = 'HeMiLauncher'
+
+$version = (Select-String -Path Cargo.toml -Pattern '^version = "(.+)"').Matches[0].Groups[1].Value
+$iscc = @((Get-Command ISCC.exe -ErrorAction SilentlyContinue).Source,
+          "$env:LOCALAPPDATA\Programs\Inno Setup 6\ISCC.exe", "${env:ProgramFiles(x86)}\Inno Setup 6\ISCC.exe", "$env:ProgramFiles\Inno Setup 6\ISCC.exe") |
+        Where-Object { $_ -and (Test-Path $_) } | Select-Object -First 1
+if (-not $iscc) { throw 'Inno Setup 6 is not installed (winget install JRSoftware.InnoSetup).' }
+
+# the builds: cargo writes to build\<target>\release and puts the C runtime into the exe (.cargo\config.toml)
+$targets = [ordered]@{ x64 = 'x86_64-pc-windows-msvc'; arm64 = 'aarch64-pc-windows-msvc' }
+$exes = [ordered]@{}
+foreach ($arch in $targets.Keys) {
+    if ($arch -eq 'arm64' -and $NoArm) { continue }
+    $triple = $targets[$arch]
+    $ErrorActionPreference = 'Continue'
+    rustup target add $triple *> $null
+    cargo build --release --target $triple
+    $ok = $LASTEXITCODE -eq 0
+    $ErrorActionPreference = 'Stop'
+    if (-not $ok) {
+        if ($arch -eq 'arm64' -and -not $env:GITHUB_ACTIONS) { Write-Warning 'ARM64 could not be built on this PC (the MSVC ARM64 build tools are missing?) - x64 only.'; continue }
+        throw "The build failed ($arch)."
+    }
+    $exes[$arch] = Join-Path $root "build\$triple\release\$app.exe"
+}
+
+$dist = Join-Path $root 'build\dist'
+Remove-Item $dist -Recurse -Force -ErrorAction SilentlyContinue
+New-Item -ItemType Directory $dist | Out-Null
+Write-Host "$app $version ($($exes.Keys -join ', '))" -ForegroundColor Cyan
+
+$isccArgs = @('/Q', "/DAppVersion=$version", "/DAppExe=$($exes['x64'])", "/DOutputDir=$dist")
+if ($exes['arm64']) { $isccArgs += "/DAppExeArm=$($exes['arm64'])" }
+& $iscc @isccArgs (Join-Path $root "installer\$app.iss")
+if ($LASTEXITCODE) { throw 'The installer could not be made.' }
+
+# the portable zips: the exe right inside, no folder around it
+foreach ($arch in $exes.Keys) {
+    $zip = if ($arch -eq 'x64') { "$dist\$app-Portable.zip" } else { "$dist\$app-Portable-$arch.zip" }
+    Compress-Archive -Path $exes[$arch] -DestinationPath $zip
+}
+
+Get-ChildItem $dist | ForEach-Object { Write-Host ("  {0}  {1:N1} MB" -f $_.Name, ($_.Length / 1MB)) }

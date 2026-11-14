@@ -34,31 +34,20 @@ pub fn icon(size: f32) -> FontId {
 }
 
 /// Segoe Fluent Icons glyphs.
-#[allow(dead_code)]
 pub mod glyph {
-    pub const FOLDER: char = '\u{E8B7}';
-    pub const OPEN_FOLDER: char = '\u{E838}';
     pub const CLOSE: char = '\u{E711}';
     pub const COMPLETED: char = '\u{E930}';
-    pub const INFO: char = '\u{E946}';
     pub const BACK: char = '\u{E72B}';
     pub const WARNING: char = '\u{E7BA}';
     pub const ERROR: char = '\u{EA39}';
-    pub const PHOTO: char = '\u{E91B}';
-    pub const CROP: char = '\u{E7A8}';
-    pub const ROTATE: char = '\u{E7AD}';
-    pub const PREVIOUS: char = '\u{E76B}';
-    pub const NEXT: char = '\u{E76C}';
-    pub const ADD: char = '\u{E710}';
     pub const DELETE: char = '\u{E74D}';
-    pub const CHEVRON_DOWN: char = '\u{E70D}';
-    pub const CHECK: char = '\u{E73E}';
-    pub const STOP: char = '\u{E71A}';
     pub const SETTINGS: char = '\u{E713}';
     pub const REFRESH: char = '\u{E72C}';
     pub const DOWNLOAD: char = '\u{E896}';
     pub const GLOBE: char = '\u{E774}';
     pub const NOTES: char = '\u{E8A5}';
+    /// The website (Segoe Fluent "Globe").
+    pub const WEB: char = '\u{E774}';
 }
 
 /// Everything the colours depend on; read again every few seconds and compared.

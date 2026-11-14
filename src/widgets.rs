@@ -1,8 +1,7 @@
 //! The controls of HeMiDock (WinUI 3) painted in egui – the same as in HeMiUnlocker and HeMiPad.
-#![allow(dead_code)]
 
 use crate::theme::{self, Palette, glyph};
-use eframe::egui::{self, Align, Align2, Color32, Layout, Margin, RichText, Sense, Stroke, StrokeKind, pos2, vec2};
+use eframe::egui::{self, Align, Color32, Layout, Margin, RichText, Sense, Stroke, StrokeKind, pos2, vec2};
 
 pub const CONTROL_RADIUS: u8 = 8;
 pub const CARD_RADIUS: u8 = 10;
@@ -39,19 +38,6 @@ pub fn row_layout(ui: &mut egui::Ui, height: f32, add: impl FnOnce(&mut egui::Ui
     ui.allocate_ui_with_layout(vec2(w, height), Layout::left_to_right(Align::Center), |ui| {
         ui.set_min_size(vec2(w, height));
         add(ui)
-    });
-}
-
-pub fn glyph_box(ui: &mut egui::Ui, g: char, size: f32, color: Color32) {
-    let (r, _) = ui.allocate_exact_size(vec2(32.0, 32.0), Sense::hover());
-    ui.painter().text(r.center(), Align2::CENTER_CENTER, g, theme::icon(size), color);
-}
-
-pub fn two_lines(ui: &mut egui::Ui, p: &Palette, title: &str, detail: &str) {
-    ui.vertical(|ui| {
-        ui.spacing_mut().item_spacing.y = 1.0;
-        ui.add(egui::Label::new(RichText::new(title).size(14.0).color(p.text)).truncate());
-        ui.add(egui::Label::new(RichText::new(detail).size(12.0).color(p.text2)).wrap());
     });
 }
 
@@ -142,10 +128,6 @@ impl<'a> Btn<'a> {
         self.enabled = on;
         self
     }
-    pub fn tint(mut self, c: Color32) -> Self {
-        self.tint = Some(c);
-        self
-    }
     pub fn tip(mut self, t: &'a str) -> Self {
         self.tip = Some(t);
         self
@@ -225,90 +207,6 @@ impl<'a> Btn<'a> {
     }
 }
 
-/// A Slider of WinUI: a thin track, the part up to the value in the accent colour, a round thumb with a ring.
-/// Returns true when the value changed.
-pub fn slider(ui: &mut egui::Ui, p: &Palette, value: &mut u8, range: std::ops::RangeInclusive<u8>, width: f32) -> bool {
-    let (rect, resp) = ui.allocate_exact_size(vec2(width, 32.0), Sense::click_and_drag());
-    let (lo, hi) = (*range.start() as f32, *range.end() as f32);
-    let track = egui::Rect::from_min_max(pos2(rect.left() + 10.0, rect.center().y - 2.0), pos2(rect.right() - 10.0, rect.center().y + 2.0));
-    let mut changed = false;
-    if let Some(pos) = resp.interact_pointer_pos() {
-        let t = ((pos.x - track.left()) / track.width()).clamp(0.0, 1.0);
-        let v = (lo + t * (hi - lo)).round() as u8;
-        if v != *value {
-            *value = v;
-            changed = true;
-        }
-    }
-    // the arrow keys move it by one when it has the focus (after a click)
-    if resp.has_focus() {
-        let (l, r) = ui.input(|i| (i.key_pressed(egui::Key::ArrowLeft), i.key_pressed(egui::Key::ArrowRight)));
-        if l && *value > *range.start() {
-            *value -= 1;
-            changed = true;
-        }
-        if r && *value < *range.end() {
-            *value += 1;
-            changed = true;
-        }
-    }
-    if resp.clicked() || resp.drag_started() {
-        resp.request_focus();
-    }
-    let t = (*value as f32 - lo) / (hi - lo).max(1.0);
-    let x = track.left() + t * track.width();
-    let painter = ui.painter();
-    painter.rect_filled(track, 2, p.text3);
-    painter.rect_filled(egui::Rect::from_min_max(track.min, pos2(x, track.max.y)), 2, p.accent);
-    let c = pos2(x, rect.center().y);
-    painter.circle_filled(c, 10.0, p.control);
-    painter.circle_stroke(c, 10.0, Stroke::new(1.0, p.control_stroke));
-    let r = if resp.is_pointer_button_down_on() { 5.0 } else if resp.hovered() { 7.0 } else { 6.0 };
-    painter.circle_filled(c, r, p.accent);
-    changed
-}
-
-/// A ComboBox of WinUI: a standard button with the chosen text and a chevron; the list opens below it.
-/// Returns the index chosen this frame.
-pub fn dropdown(ui: &mut egui::Ui, p: &Palette, current: usize, items: &[&str], width: f32) -> Option<usize> {
-    let text = items.get(current).copied().unwrap_or("");
-    let (rect, resp) = ui.allocate_exact_size(vec2(width, 32.0), Sense::click());
-    let (down, hover) = (resp.is_pointer_button_down_on(), resp.hovered());
-    let painter = ui.painter();
-    painter.rect_filled(rect, CONTROL_RADIUS, if down { p.control_pressed } else if hover { p.control_hover } else { p.control });
-    painter.rect_stroke(rect, CONTROL_RADIUS, Stroke::new(1.0, p.control_stroke), StrokeKind::Inside);
-    let r = CONTROL_RADIUS as f32;
-    painter.hline(rect.left() + r - 1.0..=rect.right() - r + 1.0, rect.bottom() - 0.5, Stroke::new(1.0, p.control_stroke_bottom));
-    let label = painter.layout(text.to_string(), theme::body(14.0), p.text, width - 48.0);
-    painter.galley(pos2(rect.left() + 12.0, rect.center().y - label.size().y / 2.0), label, p.text);
-    painter.text(pos2(rect.right() - 16.0, rect.center().y), Align2::CENTER_CENTER, glyph::CHEVRON_DOWN, theme::icon(12.0), p.text2);
-    if hover {
-        ui.ctx().set_cursor_icon(egui::CursorIcon::Default);
-    }
-    let mut chosen = None;
-    egui::Popup::menu(&resp).width(width).show(|ui| {
-        ui.set_min_width(width - 12.0);
-        for (i, item) in items.iter().enumerate() {
-            let on = i == current;
-            let (r, row) = ui.allocate_exact_size(vec2(ui.available_width(), 34.0), Sense::click());
-            let painter = ui.painter();
-            if row.hovered() || on {
-                painter.rect_filled(r, 4, if row.hovered() { p.subtle_hover } else { p.subtle_pressed });
-            }
-            if on {
-                let bar = egui::Rect::from_center_size(pos2(r.left() + 2.0, r.center().y), vec2(3.0, 16.0));
-                painter.rect_filled(bar, 2, p.accent);
-            }
-            painter.text(pos2(r.left() + 14.0, r.center().y), Align2::LEFT_CENTER, *item, theme::body(14.0), p.text);
-            if row.clicked() {
-                chosen = Some(i);
-                ui.close();
-            }
-        }
-    });
-    chosen
-}
-
 /// A ProgressBar of WinUI: a thin track with the done part in the accent colour.
 pub fn progress(ui: &mut egui::Ui, p: &Palette, done: f32, width: f32) {
     let (rect, _) = ui.allocate_exact_size(vec2(width, 4.0), Sense::hover());
@@ -320,21 +218,39 @@ pub fn progress(ui: &mut egui::Ui, p: &Palette, done: f32, width: f32) {
     }
 }
 
-/// A CheckBox of WinUI: a rounded square, in the accent colour with a check when on, and its text. Returns its response.
-pub fn checkbox(ui: &mut egui::Ui, p: &Palette, on: bool, text: &str) -> egui::Response {
-    let galley = ui.painter().layout(text.to_string(), theme::body(14.0), p.text, ui.available_width() - 32.0);
-    let h = galley.size().y.max(20.0);
-    let (rect, resp) = ui.allocate_exact_size(vec2(28.0 + galley.size().x, h), Sense::click());
-    let boxr = egui::Rect::from_min_size(pos2(rect.left(), rect.top() + (h - 20.0).min(2.0)), vec2(20.0, 20.0));
-    let hover = resp.hovered();
-    let painter = ui.painter();
-    if on {
-        painter.rect_filled(boxr, 4, if hover { p.accent_hover } else { p.accent });
-        painter.text(boxr.center(), Align2::CENTER_CENTER, glyph::CHECK, theme::icon(12.0), p.on_accent);
-    } else {
-        painter.rect_filled(boxr, 4, if hover { p.subtle_hover } else { p.control });
-        painter.rect_stroke(boxr, 4, Stroke::new(1.0, p.text2), StrokeKind::Inside);
+/// Buttons of the same width side by side, filling the row (the links of About); in a narrow window two or more rows.
+/// Returns the index of the clicked one.
+pub fn button_row(ui: &mut egui::Ui, p: &Palette, items: &[(&str, &str)]) -> Option<usize> {
+    let gap = 8.0;
+    let w = ui.available_width();
+    let mut cols = items.len().max(1);
+    // as many in a row as fit with the longest text whole
+    let longest = items
+        .iter()
+        .map(|(t, _)| ui.painter().layout_no_wrap(t.to_string(), crate::theme::body(14.0), p.text).size().x)
+        .fold(0.0_f32, f32::max);
+    while cols > 1 && (w - gap * (cols - 1) as f32) / cols as f32 <= longest + 28.0 {
+        cols -= 1;
     }
-    painter.galley(pos2(rect.left() + 28.0, rect.top()), galley, p.text);
-    resp
+    // the rows as even as they can be (5 in 3 + 2, not 4 + 1)
+    let rows = items.len().div_ceil(cols.max(1));
+    let cols = items.len().div_ceil(rows.max(1)).max(1);
+    let bw = (w - gap * (cols - 1) as f32) / cols as f32;
+    let mut clicked = None;
+    for (r, chunk) in items.chunks(cols).enumerate() {
+        ui.horizontal(|ui| {
+            ui.spacing_mut().item_spacing.x = gap;
+            for (c, (text, tip)) in chunk.iter().enumerate() {
+                let b = Btn::new(text).width(bw);
+                let b = if tip.is_empty() { b } else { b.tip(tip) };
+                if b.show(ui, p).clicked() {
+                    clicked = Some(r * cols + c);
+                }
+            }
+        });
+        if r + 1 < items.len().div_ceil(cols) {
+            ui.add_space(gap);
+        }
+    }
+    clicked
 }

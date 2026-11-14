@@ -26,7 +26,6 @@ enum Page {
     Apps,
     Notes(&'static str),
     Settings,
-    About,
 }
 
 enum Action {
@@ -97,6 +96,9 @@ impl LauncherApp {
             let img = egui::ColorImage::from_rgba_unmultiplied([64, 64], a.icon);
             icons.insert(a.id, cc.egui_ctx.load_texture(a.id, img, egui::TextureOptions::LINEAR));
         }
+        // the GitHub mark (white, tinted when drawn)
+        let img = egui::ColorImage::from_rgba_unmultiplied([64, 64], include_bytes!("../assets/github-64.rgba"));
+        icons.insert("github", cc.egui_ctx.load_texture("github", img, egui::TextureOptions::LINEAR));
         let mut app = LauncherApp {
             c,
             now,
@@ -188,64 +190,38 @@ impl LauncherApp {
                 Page::Apps => "HeMi Launcher".to_string(),
                 Page::Notes(id) => format!("{} {}", tr("What's new –", "Co je nového –"), name_of(id)),
                 Page::Settings => tr("Settings", "Nastavení").into(),
-                Page::About => tr("About", "O aplikaci").into(),
             };
             ui.label(RichText::new(title).font(theme::display(28.0)).color(p.text));
             ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
                 if self.page != Page::Apps {
                     return;
                 }
-                if Btn::new("").icon(glyph::INFO).subtle().tip(tr("About", "O aplikaci")).show(ui, &p).clicked() {
-                    acts.push(Action::Go(Page::About));
-                }
-                if Btn::new("").icon(glyph::SETTINGS).subtle().tip(tr("Settings", "Nastavení")).show(ui, &p).clicked() {
+                // the settings and About on one page
+                if Btn::new("").icon(glyph::SETTINGS).subtle().tip(tr("Settings and About", "Nastavení a O aplikaci")).show(ui, &p).clicked() {
                     acts.push(Action::Go(Page::Settings));
+                }
+                // all HeMi apps on the web
+                if Btn::new("").icon(glyph::WEB).subtle().tip("hemal1k.github.io").show(ui, &p).clicked() {
+                    acts.push(Action::Url(SITE.into()));
                 }
                 let check = Btn::new("").icon(glyph::REFRESH).subtle().enabled(!st.checking).tip(tr("Check for updates", "Zkontrolovat aktualizace"));
                 if check.show(ui, &p).clicked() {
                     acts.push(Action::Check);
                 }
-            });
-        });
-    }
-
-    /// The state of the updates in one line, with "Update all".
-    fn summary(&self, ui: &mut egui::Ui, st: &State, acts: &mut Vec<Action>) {
-        let p = self.p;
-        let ups = self.app_updates(st);
-        card(ui, &p, |ui| {
-            row_layout(ui, 44.0, |ui| {
-                let (g, color, text) = if st.checking {
-                    (glyph::REFRESH, p.accent_text, tr("Checking for updates…", "Hledám aktualizace…").to_string())
-                } else if !ups.is_empty() {
-                    (glyph::DOWNLOAD, p.accent_text, updates_text(ups.len()))
-                } else if let Some(e) = &st.check_error {
-                    (glyph::WARNING, p.caution, format!("{} – {}", tr("Could not check for updates", "Aktualizace se nepodařilo zjistit"), short(e)))
-                } else if st.checked.is_some() {
-                    (glyph::COMPLETED, p.success, tr("Everything is up to date", "Vše je aktuální").to_string())
-                } else {
-                    (glyph::REFRESH, p.text2, tr("Not checked yet", "Zatím nezkontrolováno").to_string())
-                };
+                // when it last looked (the state of each app is in its card)
                 if st.checking {
-                    let (r, _) = ui.allocate_exact_size(vec2(32.0, 32.0), egui::Sense::hover());
-                    egui::Spinner::new().size(18.0).color(color).paint_at(ui, egui::Rect::from_center_size(r.center(), vec2(18.0, 18.0)));
-                } else {
-                    crate::widgets::glyph_box(ui, g, 18.0, color);
+                    ui.label(RichText::new(tr("Checking…", "Hledám…")).size(12.0).color(p.text2));
+                    ui.add(egui::Spinner::new().size(14.0).color(p.accent_text));
+                } else if let Some(t) = st.checked {
+                    ui.label(RichText::new(ago(t)).size(12.0).color(p.text3));
                 }
-                ui.add_space(4.0);
-                ui.vertical(|ui| {
-                    ui.spacing_mut().item_spacing.y = 1.0;
-                    ui.label(RichText::new(text).size(14.0).color(p.text));
-                    if let Some(t) = st.checked {
-                        ui.label(RichText::new(ago(t)).size(12.0).color(p.text2));
-                    }
-                });
-                ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
-                    let busy = !st.busy.is_empty();
-                    if ups.len() > 1 && Btn::new(tr("Update all", "Aktualizovat vše")).accent().enabled(!busy).show(ui, &p).clicked() {
+                let ups = self.app_updates(st);
+                if ups.len() > 1 {
+                    ui.add_space(8.0);
+                    if Btn::new(tr("Update all", "Aktualizovat vše")).accent().enabled(st.busy.is_empty()).show(ui, &p).clicked() {
                         acts.push(Action::UpdateAll);
                     }
-                });
+                }
             });
         });
     }
@@ -309,6 +285,17 @@ impl LauncherApp {
         ui.add_space(8.0);
     }
 
+    /// A subtle button with the GitHub mark (the system icon font has none), the size of the other icon buttons.
+    fn github_button(&self, ui: &mut egui::Ui) -> bool {
+        let p = self.p;
+        let resp = Btn::new("").icon(' ').subtle().tip(tr("Project on GitHub", "Projekt na GitHubu")).show(ui, &p);
+        if let Some(t) = self.icons.get("github") {
+            let r = egui::Rect::from_center_size(resp.rect.center(), vec2(16.0, 16.0));
+            ui.painter().image(t.id(), r, egui::Rect::from_min_max(egui::pos2(0.0, 0.0), egui::pos2(1.0, 1.0)), p.text);
+        }
+        resp.clicked()
+    }
+
     fn icon(&self, ui: &mut egui::Ui, id: &str, size: f32) {
         if let Some(t) = self.icons.get(id) {
             ui.add(egui::Image::new(t).fit_to_exact_size(vec2(size, size)));
@@ -317,93 +304,85 @@ impl LauncherApp {
 
     fn apps_page(&self, ui: &mut egui::Ui, st: &State, acts: &mut Vec<Action>) {
         self.launcher_bar(ui, st, acts);
-        self.summary(ui, st, acts);
-        ui.add_space(14.0);
-        section(ui, &self.p, tr("Apps", "Aplikace"));
-        ui.spacing_mut().item_spacing.y = 4.0;
-        for a in APPS {
-            self.app_row(ui, a, st, acts);
+        // only when the check failed (no internet, GitHub limits…)
+        if let Some(e) = st.check_error.as_ref().filter(|_| !st.checking) {
+            info_bar(ui, &self.p, Tone::Caution, &format!("{} – {}", tr("Could not check for updates", "Aktualizace se nepodařilo zjistit"), short(e)), None);
+            ui.add_space(4.0);
         }
         ui.add_space(14.0);
-        let p = self.p;
-        card(ui, &p, |ui| {
-            row_layout(ui, 36.0, |ui| {
-                ui.label(RichText::new(tr("All apps also on the web", "Všechny aplikace i na webu")).size(14.0).color(p.text));
-                ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
-                    if Btn::new(tr("Open", "Otevřít")).tip(SITE).show(ui, &p).clicked() {
-                        acts.push(Action::Url(SITE.into()));
-                    }
-                });
+        section(ui, &self.p, tr("Apps", "Aplikace"));
+        // cards in a grid, as on the website: as many columns as fit (at least 300 px each)
+        let gap = 10.0;
+        let w = ui.available_width();
+        let cols = (((w + gap) / (300.0 + gap)).floor() as usize).clamp(1, 3);
+        let cw = (w - gap * (cols - 1) as f32) / cols as f32;
+        for chunk in APPS.chunks(cols) {
+            ui.horizontal_top(|ui| {
+                ui.spacing_mut().item_spacing.x = gap;
+                for a in chunk {
+                    ui.allocate_ui_with_layout(vec2(cw, 0.0), Layout::top_down(Align::Min), |ui| {
+                        ui.set_width(cw);
+                        self.app_card(ui, a, st, acts);
+                    });
+                }
             });
-        });
+            ui.add_space(gap);
+        }
     }
 
-    fn app_row(&self, ui: &mut egui::Ui, a: &'static AppInfo, st: &State, acts: &mut Vec<Action>) {
+    /// One app as a card of the website: icon, name and what it is on this PC, the version, what it does, and the
+    /// buttons (install / portable / update / open, what's new, GitHub, uninstall).
+    fn app_card(&self, ui: &mut egui::Ui, a: &'static AppInfo, st: &State, acts: &mut Vec<Action>) {
         let p = self.p;
         let installed = self.installed.get(a.id).cloned().flatten();
         // the portable version counts only when the app is not installed
         let portable = if installed.is_none() { self.portable.get(a.id).cloned().flatten() } else { None };
         let have = installed.as_ref().map(|i| i.version.clone()).or_else(|| portable.as_ref().map(|p| p.version.clone()));
-        let portable_on = self.c.settings.lock().unwrap().portable().is_some();
         let release = st.releases.get(a.id);
         let update = match (&have, release) {
             (Some(v), Some(r)) => catalog::newer(&r.version, v),
             _ => false,
         };
-        card(ui, &p, |ui| {
-            row_layout(ui, 52.0, |ui| {
-                self.icon(ui, a.id, 40.0);
-                ui.add_space(10.0);
-                ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
-                    if let Some(phase) = st.busy.get(a.id) {
-                        phase_ui(ui, &p, phase);
+        let frame = egui::Frame::new()
+            .fill(p.card)
+            .stroke(egui::Stroke::new(1.0, if update { p.accent } else { p.card_stroke }))
+            .corner_radius(crate::widgets::CARD_RADIUS)
+            .inner_margin(Margin { left: 18, right: 16, top: 16, bottom: 14 });
+        frame.show(ui, |ui| {
+            ui.set_width(ui.available_width());
+            // the head: icon, name, where it is on this PC; the version on the right
+            ui.horizontal(|ui| {
+                self.icon(ui, a.id, 36.0);
+                ui.add_space(6.0);
+                ui.vertical(|ui| {
+                    ui.spacing_mut().item_spacing.y = 0.0;
+                    ui.label(RichText::new(a.name).font(theme::semibold(16.0)).color(p.text));
+                    let who = match (&installed, &portable) {
+                        (Some(i), _) if i.all_users => tr("Installed for all users", "Nainstalováno pro všechny"),
+                        (Some(_), _) => tr("Installed", "Nainstalováno"),
+                        (None, Some(_)) => "Portable",
+                        _ if a.kind == Kind::Files => tr("Skins for VLC", "Vzhledy pro VLC"),
+                        _ => tr("Not installed", "Nenainstalováno"),
+                    };
+                    // the state of its updates, right in the card
+                    let (state, color) = if have.is_some() && update {
+                        (tr("A new version", "Nová verze"), p.accent_text)
+                    } else if have.is_some() && release.is_some() {
+                        (tr("up to date", "aktuální"), p.success)
                     } else {
-                        // the main button
-                        if have.is_some() && update {
-                            if Btn::new(tr("Update", "Aktualizovat")).accent().show(ui, &p).clicked() {
-                                acts.push(if portable.is_some() { Action::InstallPortable(a.id) } else { Action::Install(a.id) });
-                            }
-                        } else if have.is_some() {
-                            if Btn::new(tr("Open", "Otevřít")).show(ui, &p).clicked() {
-                                acts.push(Action::Open(a.id));
-                            }
-                        } else if a.kind == Kind::Files {
-                            let b = Btn::new(tr("Download", "Stáhnout")).icon(glyph::DOWNLOAD).enabled(release.is_some());
-                            if b.tip(tr("The skins into the Downloads folder", "Vzhledy do složky Stažené soubory")).show(ui, &p).clicked() {
-                                acts.push(Action::Install(a.id));
-                            }
-                        } else {
-                            if Btn::new(tr("Install", "Nainstalovat")).accent().enabled(release.is_some()).show(ui, &p).clicked() {
-                                acts.push(Action::Install(a.id));
-                            }
-                            // the portable version into the chosen folder (only with a folder in the settings)
-                            if portable_on {
-                                let tip = tr("The portable version into your folder", "Portable verze do tvé složky");
-                                if Btn::new("Portable").enabled(release.is_some()).tip(tip).show(ui, &p).clicked() {
-                                    acts.push(Action::InstallPortable(a.id));
-                                }
-                            }
-                        }
-                        // the smaller ones
-                        if installed.is_some()
-                            && Btn::new("").icon(glyph::DELETE).subtle().tip(tr("Uninstall", "Odinstalovat")).show(ui, &p).clicked()
-                        {
-                            acts.push(Action::Uninstall(a.id));
-                        }
-                        if portable.is_some()
-                            && Btn::new("").icon(glyph::DELETE).subtle().tip(tr("Remove the portable version", "Odstranit portable verzi")).show(ui, &p).clicked()
-                        {
-                            acts.push(Action::RemovePortable(a.id));
-                        }
-                        if Btn::new("").icon(glyph::GLOBE).subtle().tip(tr("Project on GitHub", "Projekt na GitHubu")).show(ui, &p).clicked() {
-                            acts.push(Action::Url(format!("https://github.com/Hemal1k/{}", a.id)));
-                        }
-                        if release.is_some() && Btn::new("").icon(glyph::NOTES).subtle().tip(tr("What's new", "Co je nového")).show(ui, &p).clicked() {
-                            acts.push(Action::Go(Page::Notes(a.id)));
-                        }
+                        ("", p.text3)
+                    };
+                    // one label of two colours ("Installed · up to date")
+                    let mut job = egui::text::LayoutJob::default();
+                    let fmt = |c| egui::TextFormat { font_id: theme::body(12.0), color: c, ..Default::default() };
+                    job.append(who, 0.0, fmt(p.text3));
+                    if !state.is_empty() {
+                        job.append(" · ", 0.0, fmt(p.text3));
+                        job.append(state, 0.0, fmt(color));
                     }
-                    ui.add_space(8.0);
-                    // the versions
+                    ui.label(job);
+                });
+                ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
                     let (text, color) = match (&have, release) {
                         (Some(v), Some(r)) if update => (format!("{v} → {}", r.version), p.accent_text),
                         (Some(v), _) => (v.clone(), p.text2),
@@ -411,29 +390,65 @@ impl LauncherApp {
                         (None, None) => (String::new(), p.text3),
                     };
                     ui.label(RichText::new(text).size(13.0).color(color));
-                    ui.add_space(8.0);
-                    ui.with_layout(Layout::left_to_right(Align::Center), |ui| {
-                        ui.vertical(|ui| {
-                            ui.spacing_mut().item_spacing.y = 1.0;
-                            ui.horizontal(|ui| {
-                                ui.label(RichText::new(a.name).font(theme::semibold(15.0)).color(p.text));
-                                let who = match (&installed, &portable) {
-                                    (Some(i), _) if i.all_users => Some(tr("all users", "všichni uživatelé")),
-                                    (Some(_), _) => Some(tr("installed", "nainstalováno")),
-                                    (None, Some(_)) => Some("portable"),
-                                    _ => None,
-                                };
-                                if let Some(who) = who {
-                                    ui.label(RichText::new(who).size(11.0).color(p.text3));
-                                }
-                            });
-                            let (line, color) = match st.errors.get(a.id) {
-                                Some(e) => (short(e), p.critical),
-                                None => (a.line().to_string(), p.text2),
-                            };
-                            ui.add(egui::Label::new(RichText::new(line).size(12.0).color(color)).truncate());
-                        });
-                    });
+                });
+            });
+            ui.add_space(8.0);
+            // what it does (or the last error), always two lines high so the cards of a row line up
+            let (line, color) = match st.errors.get(a.id) {
+                Some(e) => (short(e), p.critical),
+                None => (a.line().to_string(), p.text2),
+            };
+            let (r, _) = ui.allocate_exact_size(vec2(ui.available_width(), 40.0), egui::Sense::hover());
+            let galley = ui.painter().layout(line, theme::body(13.0), color, r.width());
+            ui.painter().galley(r.min, galley, color);
+            ui.add_space(10.0);
+            // the buttons
+            ui.horizontal(|ui| {
+                ui.set_min_height(32.0);
+                if let Some(phase) = st.busy.get(a.id) {
+                    ui.with_layout(Layout::right_to_left(Align::Center), |ui| phase_ui(ui, &p, phase));
+                    return;
+                }
+                if have.is_some() && update {
+                    if Btn::new(tr("Update", "Aktualizovat")).accent().show(ui, &p).clicked() {
+                        acts.push(if portable.is_some() { Action::InstallPortable(a.id) } else { Action::Install(a.id) });
+                    }
+                } else if have.is_some() {
+                    if Btn::new(tr("Open", "Otevřít")).show(ui, &p).clicked() {
+                        acts.push(Action::Open(a.id));
+                    }
+                } else if a.kind == Kind::Files {
+                    let b = Btn::new(tr("Download", "Stáhnout")).icon(glyph::DOWNLOAD).accent().enabled(release.is_some());
+                    if b.tip(tr("The skins into the Downloads folder", "Vzhledy do složky Stažené soubory")).show(ui, &p).clicked() {
+                        acts.push(Action::Install(a.id));
+                    }
+                } else {
+                    if Btn::new(tr("Install", "Nainstalovat")).accent().enabled(release.is_some()).show(ui, &p).clicked() {
+                        acts.push(Action::Install(a.id));
+                    }
+                    let tip = tr(
+                        "The portable version into the Downloads folder (or the folder from the settings)",
+                        "Portable verze do Stažených souborů (nebo do složky z nastavení)",
+                    );
+                    if Btn::new("Portable").enabled(release.is_some()).tip(tip).show(ui, &p).clicked() {
+                        acts.push(Action::InstallPortable(a.id));
+                    }
+                }
+                ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
+                    if installed.is_some() && Btn::new("").icon(glyph::DELETE).subtle().tip(tr("Uninstall", "Odinstalovat")).show(ui, &p).clicked() {
+                        acts.push(Action::Uninstall(a.id));
+                    }
+                    if portable.is_some()
+                        && Btn::new("").icon(glyph::DELETE).subtle().tip(tr("Remove the portable version", "Odstranit portable verzi")).show(ui, &p).clicked()
+                    {
+                        acts.push(Action::RemovePortable(a.id));
+                    }
+                    if self.github_button(ui) {
+                        acts.push(Action::Url(format!("https://github.com/Hemal1k/{}", a.id)));
+                    }
+                    if release.is_some() && Btn::new("").icon(glyph::NOTES).subtle().tip(tr("What's new", "Co je nového")).show(ui, &p).clicked() {
+                        acts.push(Action::Go(Page::Notes(a.id)));
+                    }
                 });
             });
         });
@@ -543,7 +558,7 @@ impl LauncherApp {
 
     fn about_page(&self, ui: &mut egui::Ui, acts: &mut Vec<Action>) {
         let p = self.p;
-        section(ui, &p, "HeMi Launcher");
+        section(ui, &p, tr("About", "O aplikaci"));
         ui.spacing_mut().item_spacing.y = 4.0;
         let value = |ui: &mut egui::Ui, label: &str, value: &str| {
             card(ui, &p, |ui| {
@@ -558,22 +573,21 @@ impl LauncherApp {
         value(ui, tr("Author", "Autor"), "Richard Hemala");
         value(ui, tr("Version", "Verze"), &format!("Beta {}", env!("CARGO_PKG_VERSION")));
         value(ui, tr("Build date", "Datum sestavení"), &i18n::build_date());
-        let open = |ui: &mut egui::Ui, title: &str, tip: &str, act: Action, acts: &mut Vec<Action>| {
-            card(ui, &p, |ui| {
-                row_layout(ui, 44.0, |ui| {
-                    ui.label(RichText::new(title).size(14.0).color(p.text));
-                    ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
-                        if Btn::new(tr("Open", "Otevřít")).tip(tip).show(ui, &p).clicked() {
-                            acts.push(act);
-                        }
-                    });
-                });
-            });
-        };
-        open(ui, tr("Project on GitHub", "Projekt na GitHubu"), PROJECT, Action::Url(PROJECT.into()), acts);
-        open(ui, tr("What's new", "Co je nového"), RELEASES, Action::Url(RELEASES.into()), acts);
-        open(ui, tr("Report a problem", "Nahlásit problém"), CONTACT, Action::Url(CONTACT.into()), acts);
-        open(ui, tr("Licences", "Licence"), "", Action::Licences, acts);
+        // the links side by side in one card (they wrap when the window is narrow)
+        let links: Vec<(&str, &str, Action)> = vec![
+            (tr("Project on GitHub", "Projekt na GitHubu"), PROJECT, Action::Url(PROJECT.into())),
+            (tr("What's new", "Co je nového"), RELEASES, Action::Url(RELEASES.into())),
+            (tr("Report a problem", "Nahlásit problém"), CONTACT, Action::Url(CONTACT.into())),
+            (tr("Licences", "Licence"), "", Action::Licences),
+        ];
+        ui.add_space(10.0);
+        section(ui, &p, tr("Links", "Odkazy"));
+        let items: Vec<(&str, &str)> = links.iter().map(|(t, tip, _)| (*t, *tip)).collect();
+        if let Some(i) = card(ui, &p, |ui| crate::widgets::button_row(ui, &p, &items))
+            && let Some((_, _, act)) = links.into_iter().nth(i)
+        {
+            acts.push(act);
+        }
     }
 
     fn act(&mut self, acts: Vec<Action>) {
@@ -733,8 +747,11 @@ impl eframe::App for LauncherApp {
                     egui::Frame::new().inner_margin(Margin { left: 0, right: 8, top: 0, bottom: 12 }).show(ui, |ui| match self.page {
                         Page::Apps => self.apps_page(ui, &st, &mut acts),
                         Page::Notes(id) => self.notes_page(ui, id, &st, &mut acts),
-                        Page::Settings => self.settings_page(ui, &mut acts),
-                        Page::About => self.about_page(ui, &mut acts),
+                        Page::Settings => {
+                            self.settings_page(ui, &mut acts);
+                            ui.add_space(14.0);
+                            self.about_page(ui, &mut acts);
+                        }
                     });
                 });
             });
@@ -770,19 +787,6 @@ fn phase_ui(ui: &mut egui::Ui, p: &Palette, phase: &Phase) {
 
 fn name_of(id: &str) -> &'static str {
     crate::jobs::find(id).map(|a| a.name).unwrap_or("")
-}
-
-fn updates_text(n: usize) -> String {
-    if i18n::cz() {
-        match n {
-            1 => "1 aktualizace k dispozici".into(),
-            _ => format!("{n} aktualizace k dispozici"),
-        }
-    } else if n == 1 {
-        "1 update available".into()
-    } else {
-        format!("{n} updates available")
-    }
 }
 
 /// "Checked just now / 5 min ago / 2 h ago".

@@ -1,4 +1,4 @@
-// HeMi Launcher – installs the HeMi apps and keeps them up to date (and itself).
+// HeMi Launcher â€“ installs the HeMi apps and keeps them up to date (and itself).
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
 mod app;
@@ -41,7 +41,8 @@ fn main() -> eframe::Result {
         viewport: egui::ViewportBuilder::default()
             .with_title("HeMi Launcher")
             .with_app_id("HeMiLauncher")
-            .with_inner_size([820.0, 640.0])
+            // three cards side by side and the two rows of them without scrolling
+            .with_inner_size([1010.0, 600.0])
             .with_min_inner_size([640.0, 480.0])
             .with_icon(icon)
             .with_visible(!hidden)

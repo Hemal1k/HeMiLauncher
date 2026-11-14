@@ -37,17 +37,44 @@ fn agent() -> &'static ureq::Agent {
     })
 }
 
+/// The last answer of GitHub for a project: %LocalAppData%\HeMi\HeMiLauncher\cache\<project>.json, its ETag on the
+/// first line. GitHub allows 60 questions an hour without an account; "has it changed?" answered by 304 does not count.
+fn cache_file(project: &str) -> std::path::PathBuf {
+    std::env::var_os("LOCALAPPDATA").map(std::path::PathBuf::from).unwrap_or_default().join("HeMi").join("HeMiLauncher").join("cache").join(format!("{project}.json"))
+}
+
 /// The latest release of a project (not pre-releases).
 pub fn latest(project: &str) -> Result<Release, String> {
+    let tr = crate::i18n::tr;
     let url = format!("https://api.github.com/repos/{OWNER}/{project}/releases/latest");
-    let text = agent()
-        .get(&url)
-        .header("Accept", "application/vnd.github+json")
-        .call()
-        .map_err(|e| e.to_string())?
-        .body_mut()
-        .read_to_string()
-        .map_err(|e| e.to_string())?;
+    let cached = std::fs::read_to_string(cache_file(project)).ok().and_then(|t| t.split_once('\n').map(|(e, b)| (e.to_string(), b.to_string())));
+    let mut req = agent().get(&url).header("Accept", "application/vnd.github+json");
+    if let Some((etag, _)) = &cached {
+        req = req.header("If-None-Match", etag.as_str());
+    }
+    let text = match req.call() {
+        Ok(resp) if resp.status() == 304 => cached.map(|(_, b)| b).ok_or("304")?,
+        Ok(mut resp) => {
+            let etag = resp.headers().get("etag").and_then(|v| v.to_str().ok()).unwrap_or("").to_string();
+            let body = resp.body_mut().read_to_string().map_err(|e| e.to_string())?;
+            if !etag.is_empty() {
+                let f = cache_file(project);
+                let _ = std::fs::create_dir_all(f.parent().unwrap_or(Path::new(".")));
+                let _ = std::fs::write(f, format!("{etag}\n{body}"));
+            }
+            body
+        }
+        // the limit of GitHub reached: the last known release is still good enough
+        Err(ureq::Error::StatusCode(403 | 429)) => match cached {
+            Some((_, b)) => b,
+            None => return Err(tr("GitHub limit reached – try again in an hour", "Dosažen limit GitHubu – zkus to znovu za hodinu").into()),
+        },
+        Err(ureq::Error::StatusCode(404)) => return Err(tr("No release yet", "Zatím žádné vydání").into()),
+        Err(e) => match cached {
+            Some((_, b)) if matches!(e, ureq::Error::StatusCode(_)) => b,
+            _ => return Err(tr("GitHub could not be reached", "GitHub není dostupný").into()),
+        },
+    };
     let j: serde_json::Value = serde_json::from_str(&text).map_err(|e| e.to_string())?;
     let s = |k: &str| j[k].as_str().unwrap_or("").to_string();
     let assets = j["assets"]

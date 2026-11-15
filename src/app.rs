@@ -596,7 +596,7 @@ impl LauncherApp {
             });
         };
         value(ui, tr("Author", "Autor"), "Richard Hemala");
-        value(ui, tr("Version", "Verze"), &format!("Beta {}", env!("CARGO_PKG_VERSION")));
+        value(ui, tr("Version", "Verze"), env!("CARGO_PKG_VERSION"));
         // the links side by side in one card (they wrap when the window is narrow)
         let links: Vec<(&str, &str, Action)> = vec![
             (tr("Project on GitHub", "Projekt na GitHubu"), PROJECT, Action::Url(PROJECT.into())),

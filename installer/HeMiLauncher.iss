@@ -20,7 +20,7 @@
 AppId=HeMiLauncher
 AppName=HeMi Launcher
 AppVersion={#AppVersion}
-AppVerName=HeMi Launcher Beta {#AppVersion}
+AppVerName=HeMi Launcher {#AppVersion}
 AppPublisher=Richard Hemala
 AppPublisherURL=https://github.com/Hemal1k/HeMiLauncher
 AppSupportURL=https://github.com/Hemal1k/HeMiLauncher/issues

@@ -24,9 +24,16 @@ fn main() -> eframe::Result {
     // started by another HeMi app ("look for updates now")
     let check = args.iter().any(|a| a == tray::CHECK);
 
-    // the launcher runs already: its window comes up (and looks for updates when asked), this one ends
+    // started with Windows although switched off in Task Manager (the task does not know it)
+    if hidden && !args.iter().any(|a| a == "--autostart") && settings::startup_switched_off() {
+        return Ok(());
+    }
+    // the launcher runs already: its window comes up (and looks for updates when asked), this one ends; the second
+    // start at sign-in (the task and the Run value both start it) ends quietly
     if !tray::first() {
-        tray::wake(check);
+        if !hidden {
+            tray::wake(check);
+        }
         return Ok(());
     }
     jobs::clean_old();

@@ -208,7 +208,7 @@ impl LauncherApp {
                     acts.push(Action::Go(Page::Settings));
                 }
                 // all HeMi apps on the web
-                if Btn::new("").icon(glyph::WEB).subtle().tip("hemal1k.github.io").show(ui, &p).clicked() {
+                if self.web_button(ui) {
                     acts.push(Action::Url(SITE.into()));
                 }
                 let check = Btn::new("").icon(glyph::REFRESH).subtle().enabled(!st.checking).tip(tr("Check for updates", "Zkontrolovat aktualizace"));
@@ -222,12 +222,13 @@ impl LauncherApp {
                 } else if let Some(t) = st.checked {
                     ui.label(RichText::new(ago(t)).size(12.0).color(p.text3));
                 }
+                // always there; it works when something has a new version
                 let ups = self.app_updates(st);
-                if ups.len() > 1 {
-                    ui.add_space(8.0);
-                    if Btn::new(tr("Update all", "Aktualizovat vše")).accent().enabled(st.busy.is_empty()).show(ui, &p).clicked() {
-                        acts.push(Action::UpdateAll);
-                    }
+                ui.add_space(8.0);
+                let tip = if ups.is_empty() { tr("Everything is up to date", "Vše je aktuální") } else { tr("Installs every new version", "Nainstaluje všechny nové verze") };
+                let all = Btn::new(tr("Update all", "Aktualizovat vše")).accent().enabled(!ups.is_empty() && st.busy.is_empty()).tip(tip);
+                if all.show(ui, &p).clicked() {
+                    acts.push(Action::UpdateAll);
                 }
             });
         });
@@ -300,6 +301,24 @@ impl LauncherApp {
             let r = egui::Rect::from_center_size(resp.rect.center(), vec2(16.0, 16.0));
             ui.painter().image(t.id(), r, egui::Rect::from_min_max(egui::pos2(0.0, 0.0), egui::pos2(1.0, 1.0)), p.text);
         }
+        resp.clicked()
+    }
+
+    /// The website: its own icon (the "H" in a rounded square with the dot), drawn in the colour of the text like the
+    /// other icons of the bar.
+    fn web_button(&self, ui: &mut egui::Ui) -> bool {
+        let p = self.p;
+        let resp = Btn::new("").icon(' ').subtle().tip("hemal1k.github.io").show(ui, &p);
+        let r = egui::Rect::from_center_size(resp.rect.center(), vec2(16.0, 16.0));
+        let at = |x: f32, y: f32| egui::pos2(r.min.x + x / 4.0, r.min.y + y / 4.0); // from the 64 × 64 of the website icon
+        let painter = ui.painter();
+        let line = egui::Stroke::new(1.3, p.text);
+        painter.rect_stroke(r.shrink(0.65), 4.0, line, egui::StrokeKind::Middle);
+        let h = egui::Stroke::new(1.7, p.text);
+        painter.line_segment([at(21.0, 17.0), at(21.0, 47.0)], h);
+        painter.line_segment([at(43.0, 17.0), at(43.0, 47.0)], h);
+        painter.line_segment([at(21.0, 32.0), at(43.0, 32.0)], h);
+        painter.circle_filled(at(51.0, 13.0), 1.2, p.text);
         resp.clicked()
     }
 
@@ -425,7 +444,7 @@ impl LauncherApp {
                         acts.push(Action::Open(a.id));
                     }
                 } else if a.kind == Kind::Files {
-                    let b = Btn::new(tr("Download", "Stáhnout")).icon(glyph::DOWNLOAD).accent().enabled(release.is_some());
+                    let b = Btn::new(tr("Download", "Stáhnout")).accent().enabled(release.is_some());
                     if b.tip(tr("The skins into the Downloads folder", "Vzhledy do složky Stažené soubory")).show(ui, &p).clicked() {
                         acts.push(Action::Install(a.id));
                     }

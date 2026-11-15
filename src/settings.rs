@@ -81,19 +81,102 @@ pub fn autostart() -> bool {
     reg::read(false, RUN, VALUE).is_some()
 }
 
+/// The start with Windows is two things: the Run value (it shows in Task Manager → Startup apps, where it can be switched
+/// off) and a task at sign-in – Windows starts the Run values only some time after the sign-in, the task at once.
 pub fn set_autostart(on: bool) {
     match (on, std::env::current_exe()) {
         (true, Ok(exe)) => {
             reg::write_user(RUN, VALUE, &format!("\"{}\" {TRAY}", exe.display()));
+            register_task(&exe);
         }
-        _ => reg::delete_user(RUN, VALUE),
+        _ => {
+            reg::delete_user(RUN, VALUE);
+            delete_task();
+        }
     }
 }
 
-/// Moved (another folder, an update of the portable one): the start with Windows points to this exe again.
+/// Switched off in Task Manager → Startup apps: Windows marks the Run value (the first byte odd = off); the task then
+/// starts nothing either.
+pub fn startup_switched_off() -> bool {
+    reg::first_byte_user(r"Software\Microsoft\Windows\CurrentVersion\Explorer\StartupApproved\Run", VALUE).is_some_and(|b| b & 1 == 1)
+}
+
+/// One task per user (the tasks of all users share one folder).
+fn task_name() -> String {
+    format!("HeMiLauncher ({})", std::env::var("USERNAME").unwrap_or_default())
+}
+
+fn schtasks(args: &[&str]) -> Option<String> {
+    use std::os::windows::process::CommandExt;
+    const CREATE_NO_WINDOW: u32 = 0x0800_0000;
+    let out = std::process::Command::new("schtasks.exe").args(args).creation_flags(CREATE_NO_WINDOW).output().ok()?;
+    out.status.success().then(|| String::from_utf8_lossy(&out.stdout).into_owned())
+}
+
+/// The task: at the sign-in of this user, as this user without raised rights, normal priority, also on battery,
+/// never ended after a time.
+fn register_task(exe: &std::path::Path) {
+    let esc = |s: &str| s.replace('&', "&amp;").replace('<', "&lt;").replace('>', "&gt;").replace('"', "&quot;");
+    let user = format!("{}\\{}", std::env::var("USERDOMAIN").unwrap_or_default(), std::env::var("USERNAME").unwrap_or_default());
+    let exe_s = exe.display().to_string();
+    let dir = exe.parent().map(|d| d.display().to_string()).unwrap_or_default();
+    let xml = format!(
+        r#"<?xml version="1.0" encoding="UTF-16"?>
+<Task version="1.2" xmlns="http://schemas.microsoft.com/windows/2004/02/mit/task">
+  <RegistrationInfo><Description>HeMi Launcher at sign-in</Description></RegistrationInfo>
+  <Triggers><LogonTrigger><Enabled>true</Enabled><UserId>{u}</UserId></LogonTrigger></Triggers>
+  <Principals><Principal id="Author"><UserId>{u}</UserId><LogonType>InteractiveToken</LogonType><RunLevel>LeastPrivilege</RunLevel></Principal></Principals>
+  <Settings>
+    <MultipleInstancesPolicy>IgnoreNew</MultipleInstancesPolicy>
+    <DisallowStartIfOnBatteries>false</DisallowStartIfOnBatteries>
+    <StopIfGoingOnBatteries>false</StopIfGoingOnBatteries>
+    <AllowHardTerminate>false</AllowHardTerminate>
+    <ExecutionTimeLimit>PT0S</ExecutionTimeLimit>
+    <Priority>5</Priority>
+  </Settings>
+  <Actions Context="Author"><Exec><Command>"{e}"</Command><Arguments>{TRAY}</Arguments><WorkingDirectory>{d}</WorkingDirectory></Exec></Actions>
+</Task>"#,
+        u = esc(&user),
+        e = esc(&exe_s),
+        d = esc(&dir)
+    );
+    // schtasks wants the file in UTF-16 with its mark
+    let mut bytes = vec![0xFF, 0xFE];
+    bytes.extend(xml.encode_utf16().flat_map(|c| c.to_le_bytes()));
+    let file = std::env::temp_dir().join("hemilauncher-task.xml");
+    if std::fs::write(&file, bytes).is_ok() {
+        let name = task_name();
+        schtasks(&["/Create", "/TN", &name, "/XML", &file.display().to_string(), "/F"]);
+        let _ = std::fs::remove_file(&file);
+    }
+}
+
+fn delete_task() {
+    let name = task_name();
+    schtasks(&["/Delete", "/TN", &name, "/F"]);
+}
+
+/// The task there and pointing to this exe (asked by schtasks – only on the thread of the start, never on the window's).
+fn task_ok(exe: &std::path::Path) -> bool {
+    let name = task_name();
+    schtasks(&["/Query", "/TN", &name, "/XML"]).is_some_and(|x| x.to_lowercase().contains(&exe.display().to_string().to_lowercase()))
+}
+
+/// Moved (another folder, an update of the portable one) or from a version without the task: the start with Windows
+/// points to this exe again and has its task. Off the window's thread (schtasks takes a moment).
 pub fn repair_autostart() {
     if autostart() {
-        set_autostart(true);
+        std::thread::spawn(|| {
+            if let Ok(exe) = std::env::current_exe() {
+                if reg::read(false, RUN, VALUE).is_none_or(|v| !v.to_lowercase().contains(&exe.display().to_string().to_lowercase())) {
+                    reg::write_user(RUN, VALUE, &format!("\"{}\" {TRAY}", exe.display()));
+                }
+                if !task_ok(&exe) {
+                    register_task(&exe);
+                }
+            }
+        });
     }
 }
 

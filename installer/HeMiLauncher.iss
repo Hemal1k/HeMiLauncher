@@ -75,6 +75,8 @@ Filename: "{app}\HeMiLauncher.exe"; Parameters: "--tray"; Flags: nowait runasori
 
 [UninstallRun]
 Filename: "{sys}\taskkill.exe"; Parameters: "/F /IM HeMiLauncher.exe"; Flags: runhidden; RunOnceId: "StopLauncher"
+; the task of the start at sign-in (the launcher makes it for the user)
+Filename: "{sys}\schtasks.exe"; Parameters: "/Delete /TN ""HeMiLauncher ({username})"" /F"; Flags: runhidden; RunOnceId: "LauncherTask"
 
 [Registry]
 ; what the launcher writes for the user: removed with it

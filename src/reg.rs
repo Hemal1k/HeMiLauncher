@@ -3,7 +3,7 @@
 use std::ptr::{null, null_mut};
 use windows_sys::Win32::Foundation::ERROR_SUCCESS;
 use windows_sys::Win32::System::Registry::{
-    HKEY, HKEY_CURRENT_USER, HKEY_LOCAL_MACHINE, KEY_WRITE, REG_SZ, RRF_RT_REG_SZ, RRF_SUBKEY_WOW6464KEY, RegCloseKey,
+    HKEY, HKEY_CURRENT_USER, HKEY_LOCAL_MACHINE, KEY_WRITE, REG_SZ, RRF_RT_REG_BINARY, RRF_RT_REG_SZ, RRF_SUBKEY_WOW6464KEY, RegCloseKey,
     RegCreateKeyExW, RegDeleteKeyValueW, RegGetValueW, RegSetValueExW,
 };
 
@@ -25,6 +25,15 @@ pub fn read(machine: bool, key: &str, name: &str) -> Option<String> {
     let end = buf.iter().position(|&c| c == 0).unwrap_or(buf.len());
     let s = String::from_utf16_lossy(&buf[..end]);
     (!s.is_empty()).then_some(s)
+}
+
+/// The first byte of a binary value of the user (None when it is not there).
+pub fn first_byte_user(key: &str, name: &str) -> Option<u8> {
+    let (k, n) = (wide(key), wide(name));
+    let mut buf = [0u8; 64];
+    let mut size = buf.len() as u32;
+    let r = unsafe { RegGetValueW(HKEY_CURRENT_USER, k.as_ptr(), n.as_ptr(), RRF_RT_REG_BINARY, null_mut(), buf.as_mut_ptr() as _, &mut size) };
+    (r == ERROR_SUCCESS && size > 0).then_some(buf[0])
 }
 
 /// A string value of the user.

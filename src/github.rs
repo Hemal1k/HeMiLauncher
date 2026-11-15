@@ -43,17 +43,33 @@ fn cache_file(project: &str) -> std::path::PathBuf {
     std::env::var_os("LOCALAPPDATA").map(std::path::PathBuf::from).unwrap_or_default().join("HeMi").join("HeMiLauncher").join("cache").join(format!("{project}.json"))
 }
 
-/// The latest release of a project (not pre-releases).
-pub fn latest(project: &str) -> Result<Release, String> {
+/// The latest release of a project (not pre-releases). GitHub counts every question without an account – also "has it
+/// changed?" answered by 304 – so an answer younger than 30 minutes is used without asking (y_user, the Refresh
+/// button: 1 minute).
+pub fn latest(project: &str, by_user: bool) -> Result<Release, String> {
     let tr = crate::i18n::tr;
     let url = format!("https://api.github.com/repos/{OWNER}/{project}/releases/latest");
     let cached = std::fs::read_to_string(cache_file(project)).ok().and_then(|t| t.split_once('\n').map(|(e, b)| (e.to_string(), b.to_string())));
+    let age = std::fs::metadata(cache_file(project)).and_then(|m| m.modified()).ok().and_then(|t| t.elapsed().ok());
+    let fresh = std::time::Duration::from_secs(if by_user { 60 } else { 30 * 60 });
+    if let (Some((_, body)), Some(age)) = (&cached, age)
+        && age < fresh
+    {
+        return parse(body);
+    }
     let mut req = agent().get(&url).header("Accept", "application/vnd.github+json");
     if let Some((etag, _)) = &cached {
         req = req.header("If-None-Match", etag.as_str());
     }
     let text = match req.call() {
-        Ok(resp) if resp.status() == 304 => cached.map(|(_, b)| b).ok_or("304")?,
+        Ok(resp) if resp.status() == 304 => {
+            // unchanged: the answer counts as new (the file gets a new time)
+            let f = cache_file(project);
+            if let Some((etag, body)) = &cached {
+                let _ = std::fs::write(&f, format!("{etag}\n{body}"));
+            }
+            cached.map(|(_, b)| b).ok_or("304")?
+        }
         Ok(mut resp) => {
             let etag = resp.headers().get("etag").and_then(|v| v.to_str().ok()).unwrap_or("").to_string();
             let body = resp.body_mut().read_to_string().map_err(|e| e.to_string())?;
@@ -75,7 +91,12 @@ pub fn latest(project: &str) -> Result<Release, String> {
             _ => return Err(tr("GitHub could not be reached", "GitHub není dostupný").into()),
         },
     };
-    let j: serde_json::Value = serde_json::from_str(&text).map_err(|e| e.to_string())?;
+    parse(&text)
+}
+
+/// A release from the answer of GitHub.
+fn parse(text: &str) -> Result<Release, String> {
+    let j: serde_json::Value = serde_json::from_str(text).map_err(|e| e.to_string())?;
     let s = |k: &str| j[k].as_str().unwrap_or("").to_string();
     let assets = j["assets"]
         .as_array()

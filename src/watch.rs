@@ -89,7 +89,7 @@ impl Ctx {
             st.checking = true;
         }
         self.repaint();
-        let all = jobs::check();
+        let all = jobs::check(by_user);
         let mut failed = None;
         {
             let mut st = self.state.lock().unwrap();

@@ -36,7 +36,7 @@ pub const APPS: &[AppInfo] = &[
         name: "HeMiDock",
         exe: "HeMiDock.exe",
         kind: Kind::App,
-        line: ("A dock, Start menu, control center and window manager instead of the taskbar", "Dock, nabídka Start, ovládací centrum a správce oken místo hlavního panelu"),
+        line: ("A dock, Start menu, control center and window manager", "Dock, nabídka Start, ovládací centrum a správce oken"),
         icon: include_bytes!("../assets/apps/hemidock.rgba"),
     },
     AppInfo {
@@ -44,7 +44,7 @@ pub const APPS: &[AppInfo] = &[
         name: "HeMiPix",
         exe: "HeMiPix.exe",
         kind: Kind::App,
-        line: ("Photos between HEIC, JPG, PNG, WebP and TIFF – whole folders at once", "Fotky mezi HEIC, JPG, PNG, WebP a TIFF – celé složky najednou"),
+        line: ("Converts photo formats and makes photos smaller", "Převod formátů fotek a zmenšení jejich velikosti"),
         icon: include_bytes!("../assets/apps/hemipix.rgba"),
     },
     AppInfo {
@@ -52,7 +52,7 @@ pub const APPS: &[AppInfo] = &[
         name: "HeMiUnlocker",
         exe: "HeMiUnlocker.exe",
         kind: Kind::App,
-        line: ("Which program holds a file – close it, unlock it, take ownership", "Který program drží soubor – zavřít, odemknout, převzít vlastnictví"),
+        line: ("Finds the program that holds a file – closes it, unlocks the file or takes ownership", "Zjistí, který program drží soubor – zavře ho, soubor odemkne nebo převezme vlastnictví"),
         icon: include_bytes!("../assets/apps/hemiunlocker.rgba"),
     },
     AppInfo {
@@ -60,7 +60,7 @@ pub const APPS: &[AppInfo] = &[
         name: "HeMiPad",
         exe: "HeMiPad.exe",
         kind: Kind::App,
-        line: ("Notepad in the Windows 11 look – dark mode, colours for JSON and YAML", "Poznámkový blok ve vzhledu Windows 11 – tmavý režim, barvy pro JSON a YAML"),
+        line: ("A simple notepad", "Jednoduchý poznámkový blok"),
         icon: include_bytes!("../assets/apps/hemipad.rgba"),
     },
     AppInfo {
@@ -68,7 +68,7 @@ pub const APPS: &[AppInfo] = &[
         name: "HeMi Dark",
         exe: "",
         kind: Kind::Files,
-        line: ("A dark skin for VLC in the style of Windows 11", "Tmavý vzhled pro VLC ve stylu Windows 11"),
+        line: ("A modern dark skin for VLC with support for high DPI", "Moderní tmavý vzhled pro VLC s podporou vyššího DPI"),
         icon: include_bytes!("../assets/apps/hemidark.rgba"),
     },
 ];

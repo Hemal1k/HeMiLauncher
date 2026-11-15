@@ -29,6 +29,8 @@ enum Page {
 }
 
 enum Action {
+    /// The theme or the language changed.
+    SetLook(crate::look::Look),
     Go(Page),
     Check,
     Install(&'static str),
@@ -62,6 +64,8 @@ pub struct LauncherApp {
     source: theme::Source,
     theme_checked: Instant,
     hwnd: isize,
+    /// The theme and the language chosen in the settings.
+    look: crate::look::Look,
     mica: bool,
     icons: HashMap<&'static str, egui::TextureHandle>,
     /// What is installed (read from the registry again every few seconds and after each job).
@@ -77,7 +81,9 @@ pub struct LauncherApp {
 
 impl LauncherApp {
     pub fn new(cc: &eframe::CreationContext<'_>, hidden: bool) -> Self {
-        let source = theme::read_source();
+        let look = crate::look::Look::load();
+        crate::i18n::set(look.language);
+        let source = theme::read_source(look.theme);
         let p = theme::palette(&source);
         theme::install_fonts(&cc.egui_ctx);
         theme::apply(&cc.egui_ctx, &p);
@@ -108,6 +114,7 @@ impl LauncherApp {
             source,
             theme_checked: Instant::now(),
             hwnd,
+            look,
             mica,
             icons,
             installed: HashMap::new(),
@@ -138,7 +145,7 @@ impl LauncherApp {
             return;
         }
         self.theme_checked = Instant::now();
-        let source = theme::read_source();
+        let source = theme::read_source(self.look.theme);
         if source != self.source {
             self.source = source;
             self.p = theme::palette(&source);
@@ -494,17 +501,12 @@ impl LauncherApp {
         let p = self.p;
         let s = self.c.settings.lock().unwrap().clone();
         ui.spacing_mut().item_spacing.y = 4.0;
-        let row = |ui: &mut egui::Ui, title: &str, detail: &str, on: bool| -> bool {
+        // a title and the switch, the height of the other rows (no descriptions – the user, 2026-11-15)
+        let row = |ui: &mut egui::Ui, title: &str, _detail: &str, on: bool| -> bool {
             let mut clicked = false;
             card(ui, &p, |ui| {
-                row_layout(ui, 48.0, |ui| {
-                    ui.vertical(|ui| {
-                        ui.spacing_mut().item_spacing.y = 1.0;
-                        ui.label(RichText::new(title).size(14.0).color(p.text));
-                        if !detail.is_empty() {
-                            ui.label(RichText::new(detail).size(12.0).color(p.text2));
-                        }
-                    });
+                row_layout(ui, 44.0, |ui| {
+                    ui.label(RichText::new(title).size(14.0).color(p.text));
                     ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
                         ui.label(RichText::new(if on { tr("On", "Zapnuto") } else { tr("Off", "Vypnuto") }).size(14.0).color(p.text));
                         clicked = toggle(ui, &p, on).clicked();
@@ -513,22 +515,45 @@ impl LauncherApp {
             });
             clicked
         };
-        section(ui, &p, tr("Updates", "Aktualizace"));
-        if row(ui, tr("Check for updates automatically", "Hledat aktualizace automaticky"), tr("After the start and every 4 hours", "Po spuštění a každé 4 hodiny"), s.auto_check) {
+        // the same at the top of every HeMi app: theme and language
+        section(ui, &p, tr("Appearance", "Vzhled"));
+        for (title, current, items, which) in [
+            (tr("Theme", "Motiv"), self.look.theme, [tr("Automatic", "Automaticky"), tr("Light", "Světlý"), tr("Dark", "Tmavý")], 0),
+            (tr("Language", "Jazyk"), self.look.language, [tr("Automatic", "Automaticky"), "English", "Čeština"], 1),
+        ] {
+            card(ui, &p, |ui| {
+                row_layout(ui, 44.0, |ui| {
+                    ui.label(RichText::new(title).size(14.0).color(p.text));
+                    ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
+                        if let Some(i) = crate::widgets::dropdown(ui, &p, current as usize, &items, 220.0) {
+                            let mut l = self.look;
+                            if which == 0 {
+                                l.theme = i as u8;
+                            } else {
+                                l.language = i as u8;
+                            }
+                            acts.push(Action::SetLook(l));
+                        }
+                    });
+                });
+            });
+        }
+        ui.add_space(14.0);        section(ui, &p, tr("Updates", "Aktualizace"));
+        if row(ui, tr("Check for updates automatically", "Automaticky vyhledat aktualizace"), "", s.auto_check) {
             acts.push(Action::Set(Settings { auto_check: !s.auto_check, ..s.clone() }));
         }
-        if row(ui, tr("Install updates by itself", "Instalovat aktualizace samo"), tr("Quietly in the background", "Potichu na pozadí"), s.auto_install) {
+        if row(ui, tr("Install updates in the background", "Instalovat aktualizace na pozadí"), "", s.auto_install) {
             acts.push(Action::Set(Settings { auto_install: !s.auto_install, ..s.clone() }));
         }
-        if row(ui, tr("Notify about new versions", "Upozornit na nové verze"), tr("A notification of Windows", "Oznámení Windows"), s.notify) {
+        if row(ui, tr("Notify about new versions", "Upozornit na nové verze"), "", s.notify) {
             acts.push(Action::Set(Settings { notify: !s.notify, ..s.clone() }));
         }
         ui.add_space(14.0);
         section(ui, &p, tr("Start", "Spouštění"));
-        if row(ui, tr("Start with Windows", "Spouštět s Windows"), tr("Hidden in the notification area", "Skrytě v oznamovací oblasti"), self.autostart) {
+        if row(ui, tr("Start with Windows", "Spouštět s Windows"), "", self.autostart) {
             acts.push(Action::Autostart(!self.autostart));
         }
-        if row(ui, tr("Closing hides it in the notification area", "Zavřením se skryje do oznamovací oblasti"), tr("It keeps checking for updates", "Dál hlídá aktualizace"), s.tray_on_close) {
+        if row(ui, tr("Closing hides it in the notification area", "Zavřením se skryje do oznamovací oblasti"), "", s.tray_on_close) {
             acts.push(Action::Set(Settings { tray_on_close: !s.tray_on_close, ..s.clone() }));
         }
         ui.add_space(14.0);
@@ -572,7 +597,6 @@ impl LauncherApp {
         };
         value(ui, tr("Author", "Autor"), "Richard Hemala");
         value(ui, tr("Version", "Verze"), &format!("Beta {}", env!("CARGO_PKG_VERSION")));
-        value(ui, tr("Build date", "Datum sestavení"), &i18n::build_date());
         // the links side by side in one card (they wrap when the window is narrow)
         let links: Vec<(&str, &str, Action)> = vec![
             (tr("Project on GitHub", "Projekt na GitHubu"), PROJECT, Action::Url(PROJECT.into())),
@@ -593,6 +617,13 @@ impl LauncherApp {
     fn act(&mut self, acts: Vec<Action>) {
         for a in acts {
             match a {
+                Action::SetLook(l) => {
+                    l.save();
+                    crate::i18n::set(l.language);
+                    self.look = l;
+                    // the new colours at once, not after the next look at the theme
+                    self.theme_checked = Instant::now().checked_sub(Duration::from_secs(5)).unwrap_or_else(Instant::now);
+                }
                 Action::Go(page) => self.page = page,
                 Action::Check => {
                     let _ = self.now.send(());

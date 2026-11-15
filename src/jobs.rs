@@ -14,8 +14,8 @@ pub const CANCELLED: &str = "cancelled";
 pub type Releases = Vec<(&'static str, Result<Release, String>)>;
 
 /// The latest releases of every app and of the launcher.
-pub fn check() -> Releases {
-    APPS.iter().chain(std::iter::once(&LAUNCHER)).map(|a| (a.id, github::latest(a.id))).collect()
+pub fn check(by_user: bool) -> Releases {
+    APPS.iter().chain(std::iter::once(&LAUNCHER)).map(|a| (a.id, github::latest(a.id, by_user))).collect()
 }
 
 /// The version of an app on this PC: installed, else portable (in `portable_dir`).

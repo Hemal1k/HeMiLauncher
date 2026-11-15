@@ -1,7 +1,7 @@
 //! The controls of HeMiDock (WinUI 3) painted in egui – the same as in HeMiUnlocker and HeMiPad.
 
 use crate::theme::{self, Palette, glyph};
-use eframe::egui::{self, Align, Color32, Layout, Margin, RichText, Sense, Stroke, StrokeKind, pos2, vec2};
+use eframe::egui::{self, Align, Align2, Color32, Layout, Margin, RichText, Sense, Stroke, StrokeKind, pos2, vec2};
 
 pub const CONTROL_RADIUS: u8 = 8;
 pub const CARD_RADIUS: u8 = 10;
@@ -253,4 +253,45 @@ pub fn button_row(ui: &mut egui::Ui, p: &Palette, items: &[(&str, &str)]) -> Opt
         }
     }
     clicked
+}
+
+/// A ComboBox of WinUI: a standard button with the chosen text and a chevron; the list opens below it.
+/// Returns the index chosen this frame.
+pub fn dropdown(ui: &mut egui::Ui, p: &Palette, current: usize, items: &[&str], width: f32) -> Option<usize> {
+    let text = items.get(current).copied().unwrap_or("");
+    let (rect, resp) = ui.allocate_exact_size(vec2(width, 32.0), Sense::click());
+    let (down, hover) = (resp.is_pointer_button_down_on(), resp.hovered());
+    let painter = ui.painter();
+    painter.rect_filled(rect, CONTROL_RADIUS, if down { p.control_pressed } else if hover { p.control_hover } else { p.control });
+    painter.rect_stroke(rect, CONTROL_RADIUS, Stroke::new(1.0, p.control_stroke), StrokeKind::Inside);
+    let r = CONTROL_RADIUS as f32;
+    painter.hline(rect.left() + r - 1.0..=rect.right() - r + 1.0, rect.bottom() - 0.5, Stroke::new(1.0, p.control_stroke_bottom));
+    let label = painter.layout(text.to_string(), theme::body(14.0), p.text, width - 48.0);
+    painter.galley(pos2(rect.left() + 12.0, rect.center().y - label.size().y / 2.0), label, p.text);
+    painter.text(pos2(rect.right() - 16.0, rect.center().y), Align2::CENTER_CENTER, glyph::CHEVRON_DOWN, theme::icon(12.0), p.text2);
+    if hover {
+        ui.ctx().set_cursor_icon(egui::CursorIcon::Default);
+    }
+    let mut chosen = None;
+    egui::Popup::menu(&resp).width(width).show(|ui| {
+        ui.set_min_width(width - 12.0);
+        for (i, item) in items.iter().enumerate() {
+            let on = i == current;
+            let (r, row) = ui.allocate_exact_size(vec2(ui.available_width(), 34.0), Sense::click());
+            let painter = ui.painter();
+            if row.hovered() || on {
+                painter.rect_filled(r, 4, if row.hovered() { p.subtle_hover } else { p.subtle_pressed });
+            }
+            if on {
+                let bar = egui::Rect::from_center_size(pos2(r.left() + 2.0, r.center().y), vec2(3.0, 16.0));
+                painter.rect_filled(bar, 2, p.accent);
+            }
+            painter.text(pos2(r.left() + 14.0, r.center().y), Align2::LEFT_CENTER, *item, theme::body(14.0), p.text);
+            if row.clicked() {
+                chosen = Some(i);
+                ui.close();
+            }
+        }
+    });
+    chosen
 }

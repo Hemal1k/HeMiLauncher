@@ -6,6 +6,7 @@ mod catalog;
 mod github;
 mod i18n;
 mod jobs;
+mod look;
 mod notify;
 mod reg;
 mod settings;

@@ -188,7 +188,7 @@ impl LauncherApp {
         ui.horizontal(|ui| {
             ui.set_min_height(40.0);
             if self.page != Page::Apps {
-                if Btn::new("").icon(glyph::BACK).subtle().tip(tr("Back", "Zpět")).show(ui, &p).clicked() {
+                if Btn::new("").icon(glyph::BACK).subtle().show(ui, &p).clicked() {
                     acts.push(Action::Go(Page::Apps));
                 }
                 ui.add_space(4.0);
@@ -204,7 +204,7 @@ impl LauncherApp {
                     return;
                 }
                 // the settings and About on one page
-                if Btn::new("").icon(glyph::SETTINGS).subtle().tip(tr("Settings and About", "Nastavení a O aplikaci")).show(ui, &p).clicked() {
+                if Btn::new("").icon(glyph::SETTINGS).subtle().show(ui, &p).clicked() {
                     acts.push(Action::Go(Page::Settings));
                 }
                 // all HeMi apps on the web

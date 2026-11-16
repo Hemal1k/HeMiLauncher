@@ -87,6 +87,8 @@ Root: HKCU; Subkey: "Software\Microsoft\Windows\CurrentVersion\Run"; ValueType: 
 Root: HKCU; Subkey: "Software\HeMi\HeMiLauncher"; Flags: uninsdeletekey dontcreatekey
 Root: HKCU; Subkey: "Software\HeMi"; Flags: uninsdeletekeyifempty dontcreatekey
 Root: HKCU; Subkey: "Software\Classes\AppUserModelId\HeMi.HeMiLauncher"; Flags: uninsdeletekey dontcreatekey
+; the link a click on its notification opens (it brings up the window)
+Root: HKCU; Subkey: "Software\Classes\hemilauncher"; Flags: uninsdeletekey dontcreatekey
 ; what Windows itself keeps about the app (its name in menus, "Open with", its notifications, Task Manager → Startup apps)
 Root: HKCU; Subkey: "Software\Microsoft\Windows\CurrentVersion\Explorer\StartupApproved\Run"; ValueType: none; ValueName: "HeMiLauncher"; Flags: uninsdeletevalue dontcreatekey
 Root: HKCU; Subkey: "Software\Classes\Local Settings\Software\Microsoft\Windows\Shell\MuiCache"; ValueType: none; ValueName: "{app}\HeMiLauncher.exe.FriendlyAppName"; Flags: uninsdeletevalue dontcreatekey

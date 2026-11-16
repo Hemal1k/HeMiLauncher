@@ -63,7 +63,7 @@ pub fn install(app: &AppInfo, release: &Release, installed: Option<&Installed>, 
     fetch(release, &name, &file, progress)?;
     let mut cmd = Command::new(&file);
     if let Some(i) = installed {
-        cmd.args(["/SILENT", "/SUPPRESSMSGBOXES", "/NORESTART", "/UPDATE", if i.all_users { "/ALLUSERS" } else { "/CURRENTUSER" }]);
+        cmd.args(["/VERYSILENT", "/SUPPRESSMSGBOXES", "/NORESTART", "/UPDATE", if i.all_users { "/ALLUSERS" } else { "/CURRENTUSER" }]);
     }
     let status = cmd.status().map_err(|e| e.to_string())?;
     let _ = std::fs::remove_file(&file);
@@ -177,7 +177,7 @@ pub fn update_self(release: &Release, progress: impl FnMut(f32)) -> Result<(), S
             let file = temp().join(name);
             fetch(release, name, &file, progress)?;
             Command::new(&file)
-                .args(["/SILENT", "/SUPPRESSMSGBOXES", "/NORESTART", "/UPDATE", if i.all_users { "/ALLUSERS" } else { "/CURRENTUSER" }])
+                .args(["/VERYSILENT", "/SUPPRESSMSGBOXES", "/NORESTART", "/UPDATE", if i.all_users { "/ALLUSERS" } else { "/CURRENTUSER" }])
                 .spawn()
                 .map_err(|e| e.to_string())?;
             Ok(())

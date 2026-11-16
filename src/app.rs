@@ -47,6 +47,8 @@ enum Action {
     Set(Settings),
     Autostart(bool),
     DismissToast,
+    /// the notes of a new version unfolded or folded in its card
+    ToggleNotes(&'static str),
 }
 
 struct Toast {
@@ -77,6 +79,8 @@ pub struct LauncherApp {
     toast: Option<Toast>,
     /// Frames left in which the window is hidden (a start with Windows).
     hide_frames: u8,
+    /// the cards whose notes of the new version are unfolded
+    notes_open: std::collections::HashSet<&'static str>,
 }
 
 impl LauncherApp {
@@ -123,6 +127,7 @@ impl LauncherApp {
             autostart: settings::autostart(),
             toast: None,
             hide_frames: if hidden { 3 } else { 0 },
+            notes_open: Default::default(),
         };
         app.read_installed();
         app
@@ -283,12 +288,11 @@ impl LauncherApp {
                             if Btn::new(tr("Update", "Aktualizovat")).accent().show(ui, &p).clicked() {
                                 acts.push(Action::UpdateSelf);
                             }
-                            if Btn::new("").icon(glyph::NOTES).subtle().tip(tr("What's new", "Co je nového")).show(ui, &p).clicked() {
-                                acts.push(Action::Go(Page::Notes(LAUNCHER.id)));
-                            }
                         }
                     });
                 });
+                ui.add_space(4.0);
+                self.notes_fold(ui, LAUNCHER.id, r, acts);
             });
         ui.add_space(8.0);
     }
@@ -428,6 +432,11 @@ impl LauncherApp {
             let (r, _) = ui.allocate_exact_size(vec2(ui.available_width(), 40.0), egui::Sense::hover());
             let galley = ui.painter().layout(line, theme::body(13.0), color, r.width());
             ui.painter().galley(r.min, galley, color);
+            // a new version: what is new in it, unfolded right in the card
+            if let (true, Some(rel)) = (have.is_some() && update, release) {
+                ui.add_space(4.0);
+                self.notes_fold(ui, a.id, rel, acts);
+            }
             ui.add_space(10.0);
             // the buttons
             ui.horizontal(|ui| {
@@ -486,6 +495,58 @@ impl LauncherApp {
         });
     }
 
+    /// Under an update: "What's new in X" that unfolds the notes of the release right there.
+    fn notes_fold(&self, ui: &mut egui::Ui, id: &'static str, r: &crate::github::Release, acts: &mut Vec<Action>) {
+        let p = self.p;
+        let open = self.notes_open.contains(id);
+        let resp = ui
+            .horizontal(|ui| {
+                let arrow = if open { glyph::CHEVRON_DOWN } else { glyph::CHEVRON_RIGHT };
+                ui.label(RichText::new(arrow.to_string()).font(theme::icon(10.0)).color(p.accent_text));
+                ui.label(RichText::new(format!("{} {}", tr("What's new in", "Co je nového ve verzi"), r.version)).size(13.0).color(p.accent_text));
+            })
+            .response
+            .interact(egui::Sense::click());
+        if resp.hovered() {
+            ui.ctx().set_cursor_icon(egui::CursorIcon::PointingHand);
+        }
+        if resp.clicked() {
+            acts.push(Action::ToggleNotes(id));
+        }
+        if open {
+            ui.add_space(4.0);
+            egui::Frame::new().fill(p.bg).corner_radius(6).inner_margin(Margin::symmetric(10, 8)).show(ui, |ui| {
+                ui.set_width(ui.available_width());
+                egui::ScrollArea::vertical().id_salt(("notes", id)).max_height(220.0).show(ui, |ui| {
+                    ui.spacing_mut().item_spacing.y = 3.0;
+                    self.notes_body(ui, &r.notes);
+                });
+            });
+        }
+    }
+
+    /// The notes of a release (Markdown: headings, bullets, text).
+    fn notes_body(&self, ui: &mut egui::Ui, notes: &str) {
+        let p = self.p;
+        for line in notes.lines() {
+            let t = line.trim_end();
+            if let Some(h) = t.strip_prefix('#') {
+                ui.add_space(4.0);
+                ui.label(RichText::new(h.trim_start_matches('#').trim()).font(theme::semibold(14.0)).color(p.text));
+            } else if let Some(item) = t.trim_start().strip_prefix("- ").or_else(|| t.trim_start().strip_prefix("* ")) {
+                let indent = (t.len() - t.trim_start().len()) as f32 * 6.0;
+                // the bullet, and the text wrapped next to it
+                ui.horizontal_top(|ui| {
+                    ui.add_space(indent);
+                    ui.label(RichText::new("•").size(13.0).color(p.text2));
+                    ui.add(egui::Label::new(RichText::new(plain(item)).size(13.0).color(p.text)).wrap());
+                });
+            } else if !t.trim().is_empty() {
+                ui.label(RichText::new(plain(t)).size(13.0).color(p.text));
+            }
+        }
+    }
+
     fn notes_page(&self, ui: &mut egui::Ui, id: &'static str, st: &State, acts: &mut Vec<Action>) {
         let p = self.p;
         let Some(r) = st.releases.get(id) else {
@@ -504,21 +565,7 @@ impl LauncherApp {
         ui.add_space(8.0);
         card(ui, &p, |ui| {
             ui.spacing_mut().item_spacing.y = 4.0;
-            for line in r.notes.lines() {
-                let t = line.trim_end();
-                if let Some(h) = t.strip_prefix('#') {
-                    ui.add_space(4.0);
-                    ui.label(RichText::new(h.trim_start_matches('#').trim()).font(theme::semibold(14.0)).color(p.text));
-                } else if let Some(item) = t.trim_start().strip_prefix("- ").or_else(|| t.trim_start().strip_prefix("* ")) {
-                    let indent = (t.len() - t.trim_start().len()) as f32 * 6.0;
-                    ui.horizontal_wrapped(|ui| {
-                        ui.add_space(indent);
-                        ui.label(RichText::new(format!("•  {}", plain(item))).size(13.0).color(p.text));
-                    });
-                } else if !t.trim().is_empty() {
-                    ui.label(RichText::new(plain(t)).size(13.0).color(p.text));
-                }
-            }
+            self.notes_body(ui, &r.notes);
         });
     }
 
@@ -732,6 +779,11 @@ impl LauncherApp {
                     self.autostart = settings::autostart();
                 }
                 Action::DismissToast => self.toast = None,
+                Action::ToggleNotes(id) => {
+                    if !self.notes_open.remove(id) {
+                        self.notes_open.insert(id);
+                    }
+                }
             }
         }
     }

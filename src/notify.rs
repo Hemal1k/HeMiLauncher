@@ -5,6 +5,8 @@
 use std::path::PathBuf;
 
 const APP_ID: &str = "HeMi.HeMiLauncher";
+/// Started from a click on its notification: the window comes up.
+pub const SHOW: &str = "--show";
 
 fn local_dir() -> PathBuf {
     std::env::var_os("LOCALAPPDATA").map(PathBuf::from).unwrap_or_default().join("HeMi").join("HeMiLauncher")
@@ -23,9 +25,17 @@ pub fn toast(title: &str, text: &str) -> bool {
     let key = format!(r"Software\Classes\AppUserModelId\{APP_ID}");
     crate::reg::write_user(&key, "DisplayName", "HeMi Launcher");
     crate::reg::write_user(&key, "IconUri", &icon.display().to_string());
+    // a click on the notification (also later in the notification centre) opens the link hemilauncher: – it starts
+    // the launcher, which brings up the window of the running one
+    if let Ok(exe) = std::env::current_exe() {
+        let proto = r"Software\Classes\hemilauncher";
+        crate::reg::write_user(proto, "", "URL:HeMi Launcher");
+        crate::reg::write_user(proto, "URL Protocol", "");
+        crate::reg::write_user(&format!(r"{proto}\shell\open\command"), "", &format!("\"{}\" {SHOW}", exe.display()));
+    }
     let esc = |s: &str| s.replace('&', "&amp;").replace('<', "&lt;").replace('>', "&gt;").replace('"', "&quot;");
     let xml = format!(
-        r#"<toast><visual><binding template="ToastGeneric"><text>{}</text><text>{}</text></binding></visual></toast>"#,
+        r#"<toast activationType="protocol" launch="hemilauncher:updates"><visual><binding template="ToastGeneric"><text>{}</text><text>{}</text></binding></visual></toast>"#,
         esc(title),
         esc(text)
     );

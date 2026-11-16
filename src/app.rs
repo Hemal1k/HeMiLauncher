@@ -388,6 +388,7 @@ impl LauncherApp {
                         (Some(_), _) => tr("Installed", "Nainstalováno"),
                         (None, Some(_)) => "Portable",
                         _ if a.kind == Kind::Files => tr("Skins for VLC", "Vzhledy pro VLC"),
+                        _ if a.kind == Kind::Tool => tr("One program, no installation", "Jeden program, bez instalace"),
                         _ => tr("Not installed", "Nenainstalováno"),
                     };
                     // the state of its updates, right in the card
@@ -443,9 +444,14 @@ impl LauncherApp {
                     if Btn::new(tr("Open", "Otevřít")).show(ui, &p).clicked() {
                         acts.push(Action::Open(a.id));
                     }
-                } else if a.kind == Kind::Files {
+                } else if a.kind == Kind::Files || a.kind == Kind::Tool {
                     let b = Btn::new(tr("Download", "Stáhnout")).accent().enabled(release.is_some());
-                    if b.tip(tr("The skins into the Downloads folder", "Vzhledy do složky Stažené soubory")).show(ui, &p).clicked() {
+                    let tip = if a.kind == Kind::Tool {
+                        tr("The program into the Downloads folder – best copied to a USB stick", "Program do složky Stažené soubory – nejlépe zkopírovat na USB disk")
+                    } else {
+                        tr("The skins into the Downloads folder", "Vzhledy do složky Stažené soubory")
+                    };
+                    if b.tip(tip).show(ui, &p).clicked() {
                         acts.push(Action::Install(a.id));
                     }
                 } else {

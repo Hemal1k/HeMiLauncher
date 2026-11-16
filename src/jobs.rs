@@ -144,6 +144,15 @@ pub fn download_files(app: &AppInfo, release: &Release, progress: impl FnMut(f32
     Ok(file)
 }
 
+/// A program without an installer (HeMimizer): the exe for this processor into the Downloads folder.
+pub fn download_tool(app: &AppInfo, release: &Release, progress: impl FnMut(f32)) -> Result<PathBuf, String> {
+    let asset = if std::env::consts::ARCH == "aarch64" { format!("{}-arm64.exe", app.id) } else { format!("{}.exe", app.id) };
+    let file = crate::settings::downloads().join(format!("{}.exe", app.id));
+    fetch(release, &asset, &file, progress)?;
+    let _ = Command::new("explorer.exe").arg(format!("/select,{}", file.display())).spawn();
+    Ok(file)
+}
+
 /// The uninstaller of the app (with its question).
 pub fn uninstall(i: &Installed) -> Result<(), String> {
     let exe = i.uninstall.trim().trim_matches('"').to_string();

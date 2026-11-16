@@ -25,10 +25,10 @@ Windows 10 / 11, x64 and ARM64. Nothing else needs to be installed.
 
 - **The apps**: [HeMiDock](https://github.com/Hemal1k/HeMiDock), [HeMiPix](https://github.com/Hemal1k/HeMiPix),
   [HeMiUnlocker](https://github.com/Hemal1k/HeMiUnlocker), [HeMiPad](https://github.com/Hemal1k/HeMiPad) and
-  [HeMi Dark](https://github.com/Hemal1k/HeMiDark) – each with its version, what's new, Install / Update / Open and Uninstall.
+  [HeMi Dark](https://github.com/Hemal1k/HeMiDark) and [HeMimizer](https://github.com/Hemal1k/HeMimizer) – each with its version, what's new, Install / Update / Open and Uninstall.
 - **Installing** runs the installer of the app with its pages (just for you or for all users, a desktop shortcut…).
   **Updating** runs it quietly – for apps installed for all users Windows asks for administrator rights.
-- **Update all** at once; HeMi Dark (skins for VLC) is downloaded into the Downloads folder.
+- **Update all** at once; HeMi Dark (skins for VLC) and HeMimizer (one program, run after reinstalling Windows) are downloaded into the Downloads folder.
 - **In the background**: after the start and every 4 hours it looks for new versions, shows a Windows notification, and can
   install them by itself (off by default). Closing the window hides it in the notification area; it can start with Windows.
 - **Checked downloads**: every installer and zip is compared with `SHA256SUMS.txt` of its release before it is run or unpacked.

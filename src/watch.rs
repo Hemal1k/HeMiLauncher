@@ -191,6 +191,7 @@ impl Ctx {
                     format!("{} {}", app.name, tr("installed", "nainstalován"))
                 }
             }),
+            catalog::Kind::Tool => jobs::download_tool(app, &release, progress).map(|f| format!("{} – {}", app.name, f.display())),
             catalog::Kind::Files => jobs::download_files(app, &release, progress).map(|_| format!("{} – {}", app.name, tr("downloaded into Downloads", "staženo do složky Stažené soubory"))),
         };
         self.state.lock().unwrap().busy.remove(id);

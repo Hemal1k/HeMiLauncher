@@ -10,6 +10,9 @@ pub enum Kind {
     App,
     /// Files without an installer (HeMi Dark: skins for VLC) – downloaded into the Downloads folder.
     Files,
+    /// One program without an installer, run once (HeMimizer: after reinstalling Windows) – "<Id>.exe" (on ARM
+    /// "<Id>-arm64.exe") downloaded into the Downloads folder.
+    Tool,
 }
 
 #[derive(Clone, Copy, Debug)]
@@ -70,6 +73,14 @@ pub const APPS: &[AppInfo] = &[
         kind: Kind::Files,
         line: ("A modern dark skin for VLC with support for high DPI", "Moderní tmavý vzhled pro VLC s podporou vyššího DPI"),
         icon: include_bytes!("../assets/apps/hemidark.rgba"),
+    },
+    AppInfo {
+        id: "HeMimizer",
+        name: "HeMimizer",
+        exe: "",
+        kind: Kind::Tool,
+        line: ("Gets a freshly installed Windows ready: drivers, programs, settings", "Připraví čerstvě nainstalované Windows: ovladače, programy, nastavení"),
+        icon: include_bytes!("../assets/apps/hemimizer.rgba"),
     },
 ];
 

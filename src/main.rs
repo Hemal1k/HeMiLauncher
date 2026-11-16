@@ -19,6 +19,13 @@ use eframe::egui;
 
 fn main() -> eframe::Result {
     let args: Vec<String> = std::env::args().skip(1).collect();
+    // the installer after an installation or a move to another folder: the start with Windows and the path the other
+    // HeMi apps know point to this exe
+    if args.iter().any(|a| a == "--repair") {
+        settings::register();
+        settings::fix_autostart();
+        return Ok(());
+    }
     // started with Windows: hidden in the notification area
     let hidden = args.iter().any(|a| a == settings::TRAY);
     // started by another HeMi app ("look for updates now")

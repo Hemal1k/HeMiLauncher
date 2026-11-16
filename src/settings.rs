@@ -167,16 +167,22 @@ fn task_ok(exe: &std::path::Path) -> bool {
 /// points to this exe again and has its task. Off the window's thread (schtasks takes a moment).
 pub fn repair_autostart() {
     if autostart() {
-        std::thread::spawn(|| {
-            if let Ok(exe) = std::env::current_exe() {
-                if reg::read(false, RUN, VALUE).is_none_or(|v| !v.to_lowercase().contains(&exe.display().to_string().to_lowercase())) {
-                    reg::write_user(RUN, VALUE, &format!("\"{}\" {TRAY}", exe.display()));
-                }
-                if !task_ok(&exe) {
-                    register_task(&exe);
-                }
-            }
-        });
+        std::thread::spawn(fix_autostart);
+    }
+}
+
+/// The work of `repair_autostart` on this thread (also `--repair` of the installer, which waits for it).
+pub fn fix_autostart() {
+    if !autostart() {
+        return;
+    }
+    if let Ok(exe) = std::env::current_exe() {
+        if reg::read(false, RUN, VALUE).is_none_or(|v| !v.to_lowercase().contains(&exe.display().to_string().to_lowercase())) {
+            reg::write_user(RUN, VALUE, &format!("\"{}\" {TRAY}", exe.display()));
+        }
+        if !task_ok(&exe) {
+            register_task(&exe);
+        }
     }
 }
 

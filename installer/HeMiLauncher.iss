@@ -25,7 +25,8 @@ AppPublisher=Richard Hemala
 AppPublisherURL=https://github.com/Hemal1k/HeMiLauncher
 AppSupportURL=https://github.com/Hemal1k/HeMiLauncher/issues
 AppUpdatesURL=https://github.com/Hemal1k/HeMiLauncher/releases
-DefaultDirName={autopf}\HeMiLauncher
+DefaultDirName={autopf}\HeMi\HeMiLauncher
+UsePreviousAppDir=no
 DisableDirPage=yes
 DisableProgramGroupPage=yes
 PrivilegesRequired=lowest
@@ -67,6 +68,8 @@ Name: "{autoprograms}\HeMi Launcher"; Filename: "{app}\HeMiLauncher.exe"
 Name: "{autodesktop}\HeMi Launcher"; Filename: "{app}\HeMiLauncher.exe"; Tasks: desktopicon
 
 [Run]
+; the File Explorer items and the start with Windows point to this installation (also after a move from the old folder)
+Filename: "{app}\HeMiLauncher.exe"; Parameters: "--repair"; Flags: runasoriginaluser waituntilterminated runhidden
 ; the start with Windows is the user's (also when installed for all users), so the launcher writes it itself
 Filename: "{app}\HeMiLauncher.exe"; Parameters: "--autostart --tray"; Flags: nowait runasoriginaluser; Tasks: autostart; Check: not WizardSilent
 Filename: "{app}\HeMiLauncher.exe"; Description: "{cm:LaunchProgram,HeMi Launcher}"; Flags: nowait postinstall skipifsilent runasoriginaluser
@@ -96,6 +99,52 @@ Type: filesandordirs; Name: "{localappdata}\HeMi\HeMiLauncher"
 Type: dirifempty; Name: "{localappdata}\HeMi"
 
 [Code]
+// Since 2026-11 the HeMi apps go into one folder HeMi, as their settings do (%AppData%\HeMi\<app>): {autopf}\HeMi\HeMiLauncher.
+// An installation in the old folder {autopf}\HeMiLauncher moves: the app running from there ends, the new version goes into the
+// new folder ("--repair" points the File Explorer items and the start with Windows to it) and the old folder is deleted.
+var
+  OldFolder: String;
+
+function FindOldFolder: String;
+begin
+  if RegQueryStringValue(HKA, 'Software\Microsoft\Windows\CurrentVersion\Uninstall\HeMiLauncher_is1', 'InstallLocation', Result) then
+  begin
+    Result := RemoveBackslashUnlessRoot(Result);
+    if (CompareText(Result, ExpandConstant('{app}')) = 0) or (CompareText(ExtractFileName(Result), 'HeMiLauncher') <> 0)
+      or not FileExists(Result + '\HeMiLauncher.exe') then
+      Result := '';
+  end
+  else
+    Result := '';
+end;
+
+procedure StopOld;
+var
+  Code: Integer;
+begin
+  OldFolder := FindOldFolder;
+  if OldFolder = '' then Exit;
+  Exec(ExpandConstant('{sys}\WindowsPowerShell\v1.0\powershell.exe'),
+    '-NoProfile -NonInteractive -Command "Get-Process | Where-Object { $_.Path -like ''' + OldFolder + '\*'' } | Stop-Process -Force"',
+    '', SW_HIDE, ewWaitUntilTerminated, Code);
+end;
+
+procedure DeleteOld;
+begin
+  if OldFolder <> '' then DelTree(OldFolder, True, True, True);
+end;
+
+function PrepareToInstall(var NeedsRestart: Boolean): String;
+begin
+  Result := '';
+  StopOld;
+end;
+
+procedure CurStepChanged(CurStep: TSetupStep);
+begin
+  if CurStep = ssPostInstall then DeleteOld;
+end;
+
 // Uninstalling: the settings of the app (%AppData%\HeMi\HeMiLauncher) are deleted or kept, as the user chooses (a quiet
 // uninstall keeps them). %AppData%\HeMi goes too when no other HeMi app has anything there.
 procedure CurUninstallStepChanged(CurUninstallStep: TUninstallStep);

@@ -1,4 +1,4 @@
-# HeMi Launcher
+# <img src="assets/HeMiLauncher.png" width="40" height="40" alt=""> HeMi Launcher
 
 [![Latest release](https://img.shields.io/github/v/release/Hemal1k/HeMiLauncher?label=release)](https://github.com/Hemal1k/HeMiLauncher/releases/latest) [![Downloads](https://img.shields.io/github/downloads/Hemal1k/HeMiLauncher/total)](https://github.com/Hemal1k/HeMiLauncher/releases) [![License: MIT](https://img.shields.io/github/license/Hemal1k/HeMiLauncher)](LICENSE) ![Windows 10 / 11](https://img.shields.io/badge/Windows-10%20%2F%2011-0078D4)
 

@@ -62,6 +62,9 @@ Source: "{#AppExe}"; DestDir: "{app}"; Flags: ignoreversion
 [Tasks]
 Name: "autostart"; Description: "Start with Windows (hidden in the notification area, checks for updates)"
 Name: "desktopicon"; Description: "{cm:CreateDesktopIcon}"; GroupDescription: "{cm:AdditionalIcons}"; Flags: unchecked
+; the updates (written for the launcher to take at its start – see SaveUpdateChoice); installing them needs looking for them
+Name: "updates"; Description: "Look for new versions automatically"; GroupDescription: "Updates:"
+Name: "updates\install"; Description: "Install them automatically (quietly, in the background)"; GroupDescription: "Updates:"; Flags: unchecked
 
 [Icons]
 Name: "{autoprograms}\HeMi Launcher"; Filename: "{app}\HeMiLauncher.exe"
@@ -136,14 +139,35 @@ begin
   if OldFolder <> '' then DelTree(OldFolder, True, True, True);
 end;
 
+var
+  // HeMi Launcher was installed before (an update, a repair or a move from the old folder)
+  Upgrade: Boolean;
+
 function PrepareToInstall(var NeedsRestart: Boolean): String;
 begin
   Result := '';
+  Upgrade := RegKeyExists(HKLM, 'Software\Microsoft\Windows\CurrentVersion\Uninstall\HeMiLauncher_is1')
+    or RegKeyExists(HKCU, 'Software\Microsoft\Windows\CurrentVersion\Uninstall\HeMiLauncher_is1');
   StopOld;
+end;
+
+{ the choice of the updates for the launcher to take at its start (HKCU\Software\HeMi\HeMiLauncher) – written before the
+  launcher is started at the end. A quiet update keeps what was set in the app; a new installation and one by hand write it. }
+procedure SaveUpdateChoice;
+var
+  Check, Install: String;
+begin
+  if WizardSilent and Upgrade then Exit;
+  Check := '0'; Install := '0';
+  if WizardIsTaskSelected('updates') then Check := '1';
+  if WizardIsTaskSelected('updates\install') then Install := '1';
+  RegWriteStringValue(HKCU, 'Software\HeMi\HeMiLauncher', 'SetupAutoCheck', Check);
+  RegWriteStringValue(HKCU, 'Software\HeMi\HeMiLauncher', 'SetupAutoInstall', Install);
 end;
 
 procedure CurStepChanged(CurStep: TSetupStep);
 begin
+  if CurStep = ssInstall then SaveUpdateChoice;
   if CurStep = ssPostInstall then DeleteOld;
 end;
 

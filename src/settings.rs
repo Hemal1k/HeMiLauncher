@@ -40,6 +40,32 @@ impl Settings {
     }
 
     pub fn load() -> Settings {
+        let mut s = Settings::read_file();
+        s.take_setup_choice();
+        s
+    }
+
+    /// What was chosen in the installer (Updates: look for them, install them): it writes it to
+    /// HKCU\Software\HeMi\HeMiLauncher instead of starting the launcher; taken into the settings once and removed.
+    fn take_setup_choice(&mut self) {
+        const KEY: &str = r"Software\HeMi\HeMiLauncher";
+        let check = reg::read(false, KEY, "SetupAutoCheck");
+        let install = reg::read(false, KEY, "SetupAutoInstall");
+        if check.is_none() && install.is_none() {
+            return;
+        }
+        if let Some(v) = check {
+            self.auto_check = v.trim() == "1";
+        }
+        if let Some(v) = install {
+            self.auto_install = v.trim() == "1";
+        }
+        self.save();
+        reg::delete_user(KEY, "SetupAutoCheck");
+        reg::delete_user(KEY, "SetupAutoInstall");
+    }
+
+    fn read_file() -> Settings {
         let mut s = Settings::default();
         let Ok(text) = std::fs::read_to_string(file()) else { return s };
         for line in text.lines() {

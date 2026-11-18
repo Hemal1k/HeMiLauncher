@@ -162,7 +162,9 @@ pub fn download_files(app: &AppInfo, release: &Release, progress: impl FnMut(f32
 
 /// A program without an installer (HeMimizer): the exe for this processor into the Downloads folder.
 pub fn download_tool(app: &AppInfo, release: &Release, progress: impl FnMut(f32)) -> Result<PathBuf, String> {
-    let asset = if std::env::consts::ARCH == "aarch64" { format!("{}-arm64.exe", app.id) } else { format!("{}.exe", app.id) };
+    // the ARM64 exe when the release has one (HeMimizer is x64 only – Windows on ARM runs it emulated)
+    let arm = format!("{}-arm64.exe", app.id);
+    let asset = if std::env::consts::ARCH == "aarch64" && release.asset(&arm).is_some() { arm } else { format!("{}.exe", app.id) };
     let file = crate::settings::downloads().join(format!("{}.exe", app.id));
     fetch(release, &asset, &file, progress)?;
     let _ = Command::new("explorer.exe").arg(format!("/select,{}", file.display())).spawn();

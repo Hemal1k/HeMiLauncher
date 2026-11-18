@@ -11,7 +11,7 @@ pub enum Kind {
     /// Files without an installer (HeMi Dark: skins for VLC) – downloaded into the Downloads folder.
     Files,
     /// One program without an installer, run once (HeMimizer: after reinstalling Windows) – "<Id>.exe" (on ARM
-    /// "<Id>-arm64.exe") downloaded into the Downloads folder.
+    /// "<Id>-arm64.exe" when the release has it – HeMimizer has not, x64 runs there too) into the Downloads folder.
     Tool,
 }
 

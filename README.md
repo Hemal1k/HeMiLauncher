@@ -16,8 +16,8 @@ updates itself too. Small, in the look of Windows 11, and it talks to nothing bu
 | File | For |
 |---|---|
 | `HeMiLauncher-Setup.exe` | The installer – just for you (no administrator) or for all users (Program Files), optionally started with Windows. |
-| `HeMiLauncher-Portable.zip` | Just the program for x64; run it from any folder. |
-| `HeMiLauncher-Portable-arm64.zip` | The same for Windows on ARM. |
+| `HeMiLauncher-Portable.exe` | Just the program for x64; run it from any folder. |
+| `HeMiLauncher-Portable-arm64.exe` | The same for Windows on ARM. |
 
 Windows 10 / 11, x64 and ARM64. Nothing else needs to be installed.
 

@@ -43,7 +43,7 @@ jobs:
         shell: pwsh
         env:
           GH_TOKEN: ${{ github.token }}
-        run: gh release upload "${{ github.event.release.tag_name }}" build/dist/HeMiLauncher-Setup.exe build/dist/HeMiLauncher-Portable.zip build/dist/HeMiLauncher-Portable-arm64.zip build/dist/SHA256SUMS.txt --clobber --repo "${{ github.repository }}"
+        run: gh release upload "${{ github.event.release.tag_name }}" build/dist/HeMiLauncher-Setup.exe build/dist/HeMiLauncher-Portable.exe build/dist/HeMiLauncher-Portable-arm64.exe build/dist/SHA256SUMS.txt --clobber --repo "${{ github.repository }}"
 
   winget:
     # the new version to winget as a pull request to microsoft/winget-pkgs (once the app is there and the secret

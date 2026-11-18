@@ -77,17 +77,33 @@ pub fn install(app: &AppInfo, release: &Release, installed: Option<&Installed>, 
     }
 }
 
-/// The portable zip of this PC's architecture (the x64 one when the release has no ARM64 zip).
-fn portable_zip(app: &AppInfo, release: &Release) -> String {
-    let arm = format!("{}-Portable-arm64.zip", app.id);
-    if cfg!(target_arch = "aarch64") && release.asset(&arm).is_some() { arm } else { format!("{}-Portable.zip", app.id) }
+/// The portable version of this PC's architecture (the x64 one when the release has no ARM64 one): the exe itself when the
+/// release has it (a program of one file), else the zip (HeMiDock, and the releases before the exes).
+fn portable_asset(app: &AppInfo, release: &Release) -> String {
+    let arm = cfg!(target_arch = "aarch64");
+    for ext in ["exe", "zip"] {
+        let names = if arm { vec![format!("{}-Portable-arm64.{ext}", app.id), format!("{}-Portable.{ext}", app.id)] } else { vec![format!("{}-Portable.{ext}", app.id)] };
+        if let Some(n) = names.into_iter().find(|n| release.asset(n).is_some()) {
+            return n;
+        }
+    }
+    format!("{}-Portable.zip", app.id)
+}
+
+/// The downloaded portable version into the empty folder `into`: the exe copied under the name of the app, a zip unpacked.
+fn unpack_portable(app: &AppInfo, file: &Path, into: &Path) -> bool {
+    if file.extension().is_some_and(|e| e.eq_ignore_ascii_case("exe")) {
+        return std::fs::copy(file, into.join(app.exe)).is_ok();
+    }
+    // tar of Windows unpacks zips too
+    Command::new("tar.exe").arg("-xf").arg(file).arg("-C").arg(into).status().is_ok_and(|s| s.success())
 }
 
 /// The portable version into `dir\<Id>`: unpacked next to it first, then swapped with the old one (which must not be
 /// running); the version goes to a small file in the folder.
 pub fn install_portable(app: &AppInfo, release: &Release, dir: &Path, progress: impl FnMut(f32)) -> Result<(), String> {
     let tr = crate::i18n::tr;
-    let name = portable_zip(app, release);
+    let name = portable_asset(app, release);
     let zip = temp().join(&name);
     fetch(release, &name, &zip, progress)?;
     let target = dir.join(app.id);
@@ -95,7 +111,7 @@ pub fn install_portable(app: &AppInfo, release: &Release, dir: &Path, progress: 
     let old = dir.join(format!("{}.old", app.id));
     let _ = std::fs::remove_dir_all(&new);
     std::fs::create_dir_all(&new).map_err(|e| format!("{}: {e}", new.display()))?;
-    let ok = Command::new("tar.exe").arg("-xf").arg(&zip).arg("-C").arg(&new).status().is_ok_and(|s| s.success());
+    let ok = unpack_portable(app, &zip, &new);
     let _ = std::fs::remove_file(&zip);
     // the exe right inside the zip, or (older zips) in one folder inside it
     let root = if new.join(app.exe).exists() {
@@ -105,7 +121,7 @@ pub fn install_portable(app: &AppInfo, release: &Release, dir: &Path, progress: 
     };
     let Some(root) = root.filter(|_| ok) else {
         let _ = std::fs::remove_dir_all(&new);
-        return Err(tr("The zip could not be unpacked.", "Zip nešel rozbalit.").into());
+        return Err(tr("The portable version could not be unpacked.", "Portable verzi nešlo připravit.").into());
     };
     std::fs::write(root.join(catalog::PORTABLE_VERSION), &release.version).map_err(|e| e.to_string())?;
     if target.exists() {
@@ -183,14 +199,13 @@ pub fn update_self(release: &Release, progress: impl FnMut(f32)) -> Result<(), S
             Ok(())
         }
         None => {
-            let name = portable_zip(&LAUNCHER, release);
+            let name = portable_asset(&LAUNCHER, release);
             let zip = temp().join(&name);
             fetch(release, &name, &zip, progress)?;
             let out = temp().join("portable");
             let _ = std::fs::remove_dir_all(&out);
             std::fs::create_dir_all(&out).map_err(|e| e.to_string())?;
-            // tar of Windows unpacks zips too
-            let ok = Command::new("tar.exe").arg("-xf").arg(&zip).arg("-C").arg(&out).status().is_ok_and(|s| s.success());
+            let ok = unpack_portable(&LAUNCHER, &zip, &out);
             let new = out.join("HeMiLauncher.exe");
             if !ok || !new.exists() {
                 return Err("The new version could not be unpacked.".into());

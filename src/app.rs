@@ -340,13 +340,25 @@ impl LauncherApp {
             ui.add_space(4.0);
         }
         ui.add_space(14.0);
+        // the apps, then what is not an app (HeMi Dark: skins for VLC) under "Other" (the user, 2026-11-19)
+        let apps: Vec<&'static AppInfo> = APPS.iter().filter(|a| a.kind != Kind::Files).collect();
+        let other: Vec<&'static AppInfo> = APPS.iter().filter(|a| a.kind == Kind::Files).collect();
         section(ui, &self.p, tr("Apps", "Aplikace"));
-        // cards in a grid, as on the website: as many columns as fit (at least 300 px each)
+        self.cards(ui, &apps, st, acts);
+        if !other.is_empty() {
+            ui.add_space(4.0);
+            section(ui, &self.p, tr("Other", "Ostatní"));
+            self.cards(ui, &other, st, acts);
+        }
+    }
+
+    /// Cards in a grid, as on the website: as many columns as fit (at least 300 px each).
+    fn cards(&self, ui: &mut egui::Ui, list: &[&'static AppInfo], st: &State, acts: &mut Vec<Action>) {
         let gap = 10.0;
         let w = ui.available_width();
         let cols = (((w + gap) / (300.0 + gap)).floor() as usize).clamp(1, 3);
         let cw = (w - gap * (cols - 1) as f32) / cols as f32;
-        for chunk in APPS.chunks(cols) {
+        for chunk in list.chunks(cols) {
             ui.horizontal_top(|ui| {
                 ui.spacing_mut().item_spacing.x = gap;
                 for a in chunk {

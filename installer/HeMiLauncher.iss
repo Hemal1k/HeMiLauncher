@@ -42,7 +42,10 @@ UninstallDisplayIcon={app}\HeMiLauncher.exe
 UninstallDisplayName=HeMi Launcher
 Compression=lzma2/max
 SolidCompression=yes
-WizardStyle=modern
+; the look of Windows 11, light or dark as Windows, and as big as the first question of the installer (it was
+; smaller and old-looking next to it, 2026-11-19)
+WizardStyle=modern dynamic windows11
+WizardSizePercent=120
 CloseApplications=force
 LicenseFile=..\LICENSE
 
@@ -63,8 +66,10 @@ Source: "{#AppExe}"; DestDir: "{app}"; Flags: ignoreversion
 Name: "autostart"; Description: "Start with Windows (hidden in the notification area, checks for updates)"
 Name: "desktopicon"; Description: "{cm:CreateDesktopIcon}"; GroupDescription: "{cm:AdditionalIcons}"; Flags: unchecked
 ; the updates (written for the launcher to take at its start – see SaveUpdateChoice); installing them needs looking for them
+; two separate boxes (as parent and child, unticking the second unticked the first too, 2026-11-19); installing them
+; needs looking for them – SaveUpdateChoice
 Name: "updates"; Description: "Look for new versions automatically"; GroupDescription: "Updates:"
-Name: "updates\install"; Description: "Install them automatically (quietly, in the background)"; GroupDescription: "Updates:"; Flags: unchecked
+Name: "updatesinstall"; Description: "Install them automatically (quietly, in the background)"; GroupDescription: "Updates:"; Flags: unchecked
 
 [Icons]
 Name: "{autoprograms}\HeMi Launcher"; Filename: "{app}\HeMiLauncher.exe"
@@ -74,7 +79,7 @@ Name: "{autodesktop}\HeMi Launcher"; Filename: "{app}\HeMiLauncher.exe"; Tasks: 
 ; the File Explorer items and the start with Windows point to this installation (also after a move from the old folder)
 Filename: "{app}\HeMiLauncher.exe"; Parameters: "--repair"; Flags: runasoriginaluser waituntilterminated runhidden
 ; the start with Windows is the user's (also when installed for all users), so the launcher writes it itself
-Filename: "{app}\HeMiLauncher.exe"; Parameters: "--autostart --tray"; Flags: nowait runasoriginaluser; Tasks: autostart; Check: not WizardSilent
+Filename: "{app}\HeMiLauncher.exe"; Parameters: "--set-autostart"; Flags: runasoriginaluser waituntilterminated runhidden; Tasks: autostart; Check: not WizardSilent
 Filename: "{app}\HeMiLauncher.exe"; Description: "{cm:LaunchProgram,HeMi Launcher}"; Flags: nowait postinstall skipifsilent runasoriginaluser
 ; after its own update (quiet): the launcher starts again in the notification area
 Filename: "{app}\HeMiLauncher.exe"; Parameters: "--tray"; Flags: nowait runasoriginaluser; Check: WizardSilent
@@ -160,7 +165,8 @@ begin
   if WizardSilent and Upgrade then Exit;
   Check := '0'; Install := '0';
   if WizardIsTaskSelected('updates') then Check := '1';
-  if WizardIsTaskSelected('updates\install') then Install := '1';
+  { installing needs looking: only with "Look for new versions" }
+  if WizardIsTaskSelected('updates') and WizardIsTaskSelected('updatesinstall') then Install := '1';
   RegWriteStringValue(HKCU, 'Software\HeMi\HeMiLauncher', 'SetupAutoCheck', Check);
   RegWriteStringValue(HKCU, 'Software\HeMi\HeMiLauncher', 'SetupAutoInstall', Install);
 end;

@@ -26,6 +26,12 @@ fn main() -> eframe::Result {
         settings::fix_autostart();
         return Ok(());
     }
+    // the installer: "Start with Windows" chosen – only written, the launcher does not start before Finish (it started
+    // during the installation, 2026-11-19)
+    if args.iter().any(|a| a == "--set-autostart") {
+        settings::set_autostart(true);
+        return Ok(());
+    }
     // started with Windows: hidden in the notification area
     let hidden = args.iter().any(|a| a == settings::TRAY);
     // started by another HeMi app ("look for updates now")

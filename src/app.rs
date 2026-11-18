@@ -59,6 +59,8 @@ struct Toast {
 
 pub struct LauncherApp {
     c: Ctx,
+    /// the section "Other" (HeMi Dark) unfolded – folded at every start
+    other_open: std::cell::Cell<bool>,
     now: Sender<()>,
     events: Receiver<Event>,
     page: Page,
@@ -110,6 +112,7 @@ impl LauncherApp {
         let img = egui::ColorImage::from_rgba_unmultiplied([64, 64], include_bytes!("../assets/github-64.rgba"));
         icons.insert("github", cc.egui_ctx.load_texture("github", img, egui::TextureOptions::LINEAR));
         let mut app = LauncherApp {
+            other_open: std::cell::Cell::new(false),
             c,
             now,
             events,
@@ -347,8 +350,25 @@ impl LauncherApp {
         self.cards(ui, &apps, st, acts);
         if !other.is_empty() {
             ui.add_space(4.0);
-            section(ui, &self.p, tr("Other", "Ostatní"));
-            self.cards(ui, &other, st, acts);
+            // folded at the start, a click on the heading unfolds it (the user, 2026-11-19)
+            let open = self.other_open.get();
+            let head = ui
+                .horizontal(|ui| {
+                    ui.spacing_mut().item_spacing.x = 6.0;
+                    let chevron = if open { glyph::CHEVRON_DOWN } else { glyph::CHEVRON_RIGHT };
+                    ui.label(RichText::new(chevron.to_string()).font(theme::icon(11.0)).color(self.p.text2));
+                    ui.label(RichText::new(tr("Other", "Ostatní")).font(theme::semibold(14.0)).color(self.p.text));
+                })
+                .response
+                .interact(egui::Sense::click())
+                .on_hover_cursor(egui::CursorIcon::PointingHand);
+            if head.clicked() {
+                self.other_open.set(!open);
+            }
+            ui.add_space(4.0);
+            if open {
+                self.cards(ui, &other, st, acts);
+            }
         }
     }
 

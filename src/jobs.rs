@@ -62,6 +62,8 @@ pub fn install(app: &AppInfo, release: &Release, installed: Option<&Installed>, 
     let file = temp().join(&name);
     fetch(release, &name, &file, progress)?;
     let mut cmd = Command::new(&file);
+    // the launcher keeps the app up to date: its installer does not ask about updates (HeMiDock); others ignore it
+    cmd.arg("/LAUNCHER");
     if let Some(i) = installed {
         cmd.args(["/VERYSILENT", "/SUPPRESSMSGBOXES", "/NORESTART", "/UPDATE", if i.all_users { "/ALLUSERS" } else { "/CURRENTUSER" }]);
     }

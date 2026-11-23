@@ -514,11 +514,7 @@ impl LauncherApp {
                             }
                         });
                     }
-                    let tip = tr("The folder of the extension – the browser loads it as an unpacked extension", "Složka rozšíření – prohlížeč ji načte jako rozbalené rozšíření");
-                    if Btn::new(tr("Show folder", "Zobrazit složku")).tip(tip).show(ui, &p).clicked() {
-                        acts.push(Action::Open(a.id));
-                    }
-                } else if have.is_some() {
+                } else if have.is_some() && a.kind != Kind::Files {
                     if Btn::new(tr("Open", "Otevřít")).show(ui, &p).clicked() {
                         acts.push(Action::Open(a.id));
                     }
@@ -590,6 +586,13 @@ impl LauncherApp {
                     }
                     if self.github_button(ui) {
                         acts.push(Action::Url(format!("https://github.com/Hemal1k/{}", a.id)));
+                    }
+                    // the extension: its folder as an icon (a text button did not fit next to "Add to browser")
+                    if a.kind == Kind::Extension && have.is_some() {
+                        let tip = tr("Show folder – the browser loads it as an unpacked extension", "Zobrazit složku – prohlížeč ji načte jako rozbalené rozšíření");
+                        if Btn::new("").icon(glyph::FOLDER).subtle().tip(tip).show(ui, &p).clicked() {
+                            acts.push(Action::Open(a.id));
+                        }
                     }
                     if release.is_some() && Btn::new("").icon(glyph::NOTES).subtle().tip(tr("What's new", "Co je nového")).show(ui, &p).clicked() {
                         acts.push(Action::Go(Page::Notes(a.id)));
@@ -821,7 +824,7 @@ impl LauncherApp {
                         }
                     });
                 }
-                Action::UpdateSelf => self.c.spawn(|c| c.update_self()),
+                Action::UpdateSelf => self.c.spawn(|c| c.update_self(true)),
                 Action::AddToBrowser(i) => {
                     let folder = crate::catalog::extension_base().join("HeMiTube");
                     if let Some(b) = crate::browsers::found().get(i) {

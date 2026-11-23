@@ -130,7 +130,7 @@ impl Ctx {
                 }
             }
             if ups.iter().any(|(id, _)| *id == LAUNCHER.id) {
-                self.update_self();
+                self.update_self(false);
             }
         } else if s.notify && !new.is_empty() {
             let names: Vec<&str> = new.iter().filter_map(|(id, _)| jobs::find(id)).map(|a| a.name).collect();
@@ -261,13 +261,14 @@ impl Ctx {
         self.repaint();
     }
 
-    /// The new version of the launcher; this one ends when it is on the way.
-    pub fn update_self(&self) {
+    /// The new version of the launcher; this one ends when it is on the way. `show`: clicked in the window – the new
+    /// one opens its window too.
+    pub fn update_self(&self, show: bool) {
         let release = self.state.lock().unwrap().releases.get(LAUNCHER.id).cloned();
         let Some(release) = release else { return };
         self.state.lock().unwrap().busy.insert(LAUNCHER.id, Phase::Download(0.0));
         self.repaint();
-        let r = jobs::update_self(&release, |f| {
+        let r = jobs::update_self(&release, show, |f| {
             self.state.lock().unwrap().busy.insert(LAUNCHER.id, if f >= 1.0 { Phase::Install } else { Phase::Download(f) });
             self.repaint();
         });

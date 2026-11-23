@@ -81,8 +81,10 @@ Filename: "{app}\HeMiLauncher.exe"; Parameters: "--repair"; Flags: runasoriginal
 ; the start with Windows is the user's (also when installed for all users), so the launcher writes it itself
 Filename: "{app}\HeMiLauncher.exe"; Parameters: "--set-autostart"; Flags: runasoriginaluser waituntilterminated runhidden; Tasks: autostart; Check: not WizardSilent
 Filename: "{app}\HeMiLauncher.exe"; Description: "{cm:LaunchProgram,HeMi Launcher}"; Flags: nowait postinstall skipifsilent runasoriginaluser
-; after its own update (quiet): the launcher starts again in the notification area
-Filename: "{app}\HeMiLauncher.exe"; Parameters: "--tray"; Flags: nowait runasoriginaluser; Check: WizardSilent
+; after its own update (quiet): the launcher starts again in the notification area – or with its window when the update
+; was clicked there (/OPEN=1)
+Filename: "{app}\HeMiLauncher.exe"; Parameters: "--tray"; Flags: nowait runasoriginaluser; Check: WizardSilent and not OpenAfter
+Filename: "{app}\HeMiLauncher.exe"; Flags: nowait runasoriginaluser; Check: WizardSilent and OpenAfter
 
 [UninstallRun]
 Filename: "{sys}\taskkill.exe"; Parameters: "/F /IM HeMiLauncher.exe"; Flags: runhidden; RunOnceId: "StopLauncher"
@@ -114,6 +116,12 @@ Type: dirifempty; Name: "{localappdata}\HeMi"
 // new folder ("--repair" points the File Explorer items and the start with Windows to it) and the old folder is deleted.
 var
   OldFolder: String;
+
+// /OPEN=1: the launcher updated itself from its window – it opens the window again after the update
+function OpenAfter: Boolean;
+begin
+  Result := ExpandConstant('{param:OPEN|0}') = '1';
+end;
 
 function FindOldFolder: String;
 begin

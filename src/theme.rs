@@ -47,6 +47,7 @@ pub mod glyph {
     pub const REFRESH: char = '\u{E72C}';
     pub const GLOBE: char = '\u{E774}';
     pub const NOTES: char = '\u{E8A5}';
+    pub const FOLDER: char = '\u{E8B7}';
 }
 
 /// Everything the colours depend on; read again every few seconds and compared.

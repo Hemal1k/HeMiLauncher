@@ -222,8 +222,9 @@ pub fn open(exe: &Path) {
 }
 
 /// The launcher updates itself: installed – its installer quietly (it starts the launcher again); portable – the new
-/// exe in place of this one (this one renamed to .old, removed at the next start). The caller quits then.
-pub fn update_self(release: &Release, progress: impl FnMut(f32)) -> Result<(), String> {
+/// exe in place of this one (this one renamed to .old, removed at the next start). The caller quits then. `show`: the
+/// update was clicked in the window – the new launcher opens its window; else (in the background) it starts in the tray.
+pub fn update_self(release: &Release, show: bool, progress: impl FnMut(f32)) -> Result<(), String> {
     let exe = std::env::current_exe().map_err(|e| e.to_string())?;
     let here = exe.parent().map(PathBuf::from).unwrap_or_default();
     match catalog::installed(&LAUNCHER).filter(|i| i.folder.eq(&here)) {
@@ -233,6 +234,8 @@ pub fn update_self(release: &Release, progress: impl FnMut(f32)) -> Result<(), S
             fetch(release, name, &file, progress)?;
             Command::new(&file)
                 .args(["/VERYSILENT", "/SUPPRESSMSGBOXES", "/NORESTART", "/UPDATE", if i.all_users { "/ALLUSERS" } else { "/CURRENTUSER" }])
+                // the installer starts the new launcher with its window, not hidden in the tray
+                .args(show.then_some("/OPEN=1"))
                 .spawn()
                 .map_err(|e| e.to_string())?;
             Ok(())
@@ -256,7 +259,7 @@ pub fn update_self(release: &Release, progress: impl FnMut(f32)) -> Result<(), S
                 let _ = std::fs::rename(&old, &exe);
                 return Err(e.to_string());
             }
-            Command::new(&exe).spawn().map_err(|e| e.to_string())?;
+            Command::new(&exe).args((!show).then_some(crate::settings::TRAY)).spawn().map_err(|e| e.to_string())?;
             Ok(())
         }
     }

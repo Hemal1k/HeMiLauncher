@@ -51,6 +51,8 @@ enum Action {
     ToggleNotes(&'static str),
     /// HeMi Dark: this colour and size set in VLC
     VlcSkin(String, u32),
+    /// HeMiTube: the guide opened in this browser (index into browsers::found)
+    AddToBrowser(usize),
 }
 
 struct Toast {
@@ -496,6 +498,22 @@ impl LauncherApp {
                         acts.push(if portable.is_some() { Action::InstallPortable(a.id) } else { Action::Install(a.id) });
                     }
                 } else if have.is_some() && a.kind == Kind::Extension {
+                    // the browser: one found – the guide opens there; more – a list to pick from
+                    let browsers = crate::browsers::found();
+                    let tip = tr("Opens a short guide in the browser: its extensions page and this folder to copy", "Otevře v prohlížeči krátký návod: jeho stránku rozšíření a tuto složku ke zkopírování");
+                    let resp = Btn::new(tr("Add to browser", "Přidat do prohlížeče")).accent().enabled(!browsers.is_empty()).tip(tip).show(ui, &p);
+                    if browsers.len() == 1 && resp.clicked() {
+                        acts.push(Action::AddToBrowser(0));
+                    } else if browsers.len() > 1 {
+                        egui::Popup::menu(&resp).show(|ui| {
+                            for (i, b) in browsers.iter().enumerate() {
+                                if ui.button(b.name).clicked() {
+                                    acts.push(Action::AddToBrowser(i));
+                                    ui.close();
+                                }
+                            }
+                        });
+                    }
                     let tip = tr("The folder of the extension – the browser loads it as an unpacked extension", "Složka rozšíření – prohlížeč ji načte jako rozbalené rozšíření");
                     if Btn::new(tr("Show folder", "Zobrazit složku")).tip(tip).show(ui, &p).clicked() {
                         acts.push(Action::Open(a.id));
@@ -506,8 +524,8 @@ impl LauncherApp {
                     }
                 } else if a.kind == Kind::Extension {
                     let tip = tr(
-                        "Unpacks the extension into the folder of the portable versions; the browser then loads it (Load unpacked)",
-                        "Rozbalí rozšíření do složky portable verzí; prohlížeč ho pak načte (Načíst rozbalené)",
+                        r"Unpacks the extension into %AppData%\HeMi\HeMiTube; the browser then loads it (Load unpacked)",
+                        r"Rozbalí rozšíření do %AppData%\HeMi\HeMiTube; prohlížeč ho pak načte (Načíst rozbalené)",
                     );
                     if Btn::new(tr("Download", "Stáhnout")).accent().enabled(release.is_some()).tip(tip).show(ui, &p).clicked() {
                         acts.push(Action::Install(a.id));
@@ -804,6 +822,14 @@ impl LauncherApp {
                     });
                 }
                 Action::UpdateSelf => self.c.spawn(|c| c.update_self()),
+                Action::AddToBrowser(i) => {
+                    let folder = crate::catalog::extension_base().join("HeMiTube");
+                    if let Some(b) = crate::browsers::found().get(i) {
+                        if let Err(e) = crate::browsers::open_guide(b, &folder) {
+                            self.toast(e, Tone::Caution);
+                        }
+                    }
+                }
                 Action::VlcSkin(colour, size) => {
                     match crate::vlc::apply(&colour, size) {
                         Ok(()) => self.toast(tr("Set in VLC – start (or restart) VLC", "Nastaveno ve VLC – spusť (nebo restartuj) VLC"), Tone::Success),

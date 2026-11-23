@@ -14,7 +14,7 @@ pub enum Kind {
     /// One program without an installer, run once (HeMiMizer: after reinstalling Windows) – "<Id>.exe" (on ARM
     /// "<Id>-arm64.exe" when the release has it – HeMiMizer has not, x64 runs there too) into the Downloads folder.
     Tool,
-    /// A browser extension (HeMiTube): "<Id>.zip" unpacked into the folder of the portable versions (`<dir>\<Id>`, with
+    /// A browser extension (HeMiTube): "<Id>.zip" unpacked into %AppData%\HeMi\<Id> (with
     /// the version file), loaded once in the browser as an unpacked extension; an update unpacks the new one in place.
     Extension,
 }
@@ -166,7 +166,15 @@ impl Portable {
     }
 }
 
+/// Where a browser extension is unpacked: its own folder in %AppData%\HeMi (`<base>\<Id>`) – not the folder of the
+/// portable versions (the user, 2026-11-23).
+pub fn extension_base() -> PathBuf {
+    std::env::var_os("APPDATA").map(PathBuf::from).unwrap_or_default().join("HeMi")
+}
+
 pub fn portable(app: &AppInfo, dir: &std::path::Path) -> Option<Portable> {
+    let base = extension_base();
+    let dir = if app.kind == Kind::Extension { base.as_path() } else { dir };
     // HeMi Dark: the skins in the folder of VLC
     if app.kind == Kind::Files {
         return crate::vlc::installed().map(|version| Portable { version, folder: crate::vlc::folder() });

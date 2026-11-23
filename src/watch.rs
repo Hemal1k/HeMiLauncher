@@ -193,14 +193,13 @@ impl Ctx {
             }),
             // the extension into the folder of the portable versions (Downloads unless set): the folder is shown, the
             // browser loads it once (Load unpacked) and reloads it after an update
-            catalog::Kind::Extension => match &dir {
-                Some(d) => jobs::install_portable(app, &release, d, progress).map(|()| {
+            catalog::Kind::Extension => match Some(catalog::extension_base()) {
+                Some(d) => jobs::install_portable(app, &release, &d, progress).map(|()| {
                     let folder = d.join(app.id);
                     if had.is_some() {
                         format!("{} {} {} – {}", app.name, tr("updated to", "aktualizován na"), release.version, tr("reload it in the browser (Extensions → ⟳)", "v prohlížeči ho obnov (Rozšíření → ⟳)"))
                     } else {
-                        let _ = std::process::Command::new("explorer.exe").arg(&folder).spawn();
-                        format!("{} – {} {} – {}", app.name, tr("unpacked in", "rozbalen v"), folder.display(), tr("in the browser: Extensions → Developer mode → Load unpacked → this folder", "v prohlížeči: Rozšíření → Režim pro vývojáře → Načíst rozbalené → tato složka"))
+                        format!("{} – {} {} – {}", app.name, tr("unpacked in", "rozbalen v"), folder.display(), tr("now click Add to browser", "teď klikni na Přidat do prohlížeče"))
                     }
                 }),
                 None => Err(tr("Choose a folder for portable versions in the settings.", "V nastavení vyber složku pro portable verze.").into()),
@@ -239,7 +238,8 @@ impl Ctx {
             self.repaint();
             return;
         }
-        let Some(dir) = self.settings.lock().unwrap().portable() else { return };
+        let dir = if app.kind == catalog::Kind::Extension { Some(catalog::extension_base()) } else { self.settings.lock().unwrap().portable() };
+        let Some(dir) = dir else { return };
         if let Err(e) = jobs::remove_portable(app, &dir) {
             self.message(format!("{}: {e}", app.name), false);
         }

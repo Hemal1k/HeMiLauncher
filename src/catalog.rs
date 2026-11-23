@@ -10,8 +10,8 @@ pub enum Kind {
     App,
     /// Files without an installer (HeMi Dark: skins for VLC) – downloaded into the Downloads folder.
     Files,
-    /// One program without an installer, run once (HeMimizer: after reinstalling Windows) – "<Id>.exe" (on ARM
-    /// "<Id>-arm64.exe" when the release has it – HeMimizer has not, x64 runs there too) into the Downloads folder.
+    /// One program without an installer, run once (HeMiMizer: after reinstalling Windows) – "<Id>.exe" (on ARM
+    /// "<Id>-arm64.exe" when the release has it – HeMiMizer has not, x64 runs there too) into the Downloads folder.
     Tool,
 }
 
@@ -75,8 +75,8 @@ pub const APPS: &[AppInfo] = &[
         icon: include_bytes!("../assets/apps/hemidark.rgba"),
     },
     AppInfo {
-        id: "HeMimizer",
-        name: "HeMimizer",
+        id: "HeMiMizer",
+        name: "HeMiMizer",
         exe: "",
         kind: Kind::Tool,
         line: ("Gets a freshly installed Windows ready: drivers, programs, settings", "Připraví čerstvě nainstalované Windows: ovladače, programy, nastavení"),

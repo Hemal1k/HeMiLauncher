@@ -352,9 +352,11 @@ impl LauncherApp {
             ui.add_space(4.0);
         }
         ui.add_space(14.0);
-        // the apps, then what is not an app (HeMi Dark: skins for VLC) under "Other" (the user, 2026-11-19)
-        let apps: Vec<&'static AppInfo> = APPS.iter().filter(|a| a.kind != Kind::Files).collect();
-        let other: Vec<&'static AppInfo> = APPS.iter().filter(|a| a.kind == Kind::Files).collect();
+        // the apps, then what is not an app of Windows under "Other": HeMi Dark (skins for VLC, the user 2026-11-19) and
+        // HeMiTube (an extension for the browser, the user 2026-11-23)
+        let is_other = |a: &&AppInfo| matches!(a.kind, Kind::Files | Kind::Extension);
+        let apps: Vec<&'static AppInfo> = APPS.iter().filter(|a| !is_other(a)).collect();
+        let other: Vec<&'static AppInfo> = APPS.iter().filter(is_other).collect();
         section(ui, &self.p, tr("Apps", "Aplikace"));
         self.cards(ui, &apps, st, acts);
         if !other.is_empty() {

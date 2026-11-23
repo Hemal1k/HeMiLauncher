@@ -30,9 +30,9 @@ Windows 10 / 11, x64 and ARM64. Nothing else needs to be installed.
 - **Installing** runs the installer of the app with its pages (just for you or for all users, a desktop shortcut…).
   **Updating** runs it quietly – for apps installed for all users Windows asks for administrator rights.
 - **Update all** at once; HeMiMizer (one program, run after reinstalling Windows) is downloaded into the Downloads folder.
-- **HeMiTube** (a browser extension for YouTube) is unpacked into the folder of the portable versions – the browser loads it
+- Under **Other**: **HeMiTube** (a browser extension for YouTube) is unpacked into the folder of the portable versions – the browser loads it
   once (*Extensions → Developer mode → Load unpacked*), later updates replace it in place (then ⟳ in the browser).
-- **HeMi Dark** goes straight into VLC: the skins into its skins folder, turned on in its settings; pick the colour and the
+- Under **Other** too: **HeMi Dark** goes straight into VLC: the skins into its skins folder, turned on in its settings; pick the colour and the
   size in its card (VLC must be closed meanwhile). Removing it brings the normal look of VLC back.
 - **In the background**: after the start and every 4 hours it looks for new versions, shows a Windows notification, and can
   install them by itself (off by default). Closing the window hides it in the notification area; it can start with Windows.

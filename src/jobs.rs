@@ -45,8 +45,17 @@ pub fn find(id: &str) -> Option<&'static AppInfo> {
     APPS.iter().chain(std::iter::once(&LAUNCHER)).find(|a| a.id == id)
 }
 
+/// The downloads before they run: the launcher's own folder, not %TEMP% (programs run from %TEMP% look like droppers to
+/// Defender – Behavior:Win32/Execution.A!ml, 2026-11-23).
 fn temp() -> PathBuf {
-    std::env::temp_dir().join("HeMiLauncher")
+    std::env::var_os("LOCALAPPDATA").map(PathBuf::from).unwrap_or_else(std::env::temp_dir).join("HeMi").join("HeMiLauncher").join("downloads")
+}
+
+/// A zip unpacked into `into` (inside the launcher – no tar.exe in the background).
+pub fn unzip(file: &Path, into: &Path) -> bool {
+    let Ok(f) = std::fs::File::open(file) else { return false };
+    let Ok(mut z) = zip::ZipArchive::new(f) else { return false };
+    z.extract(into).is_ok()
 }
 
 /// Downloads a file of the release into `to` and checks it.
@@ -101,8 +110,7 @@ fn unpack_portable(app: &AppInfo, file: &Path, into: &Path) -> bool {
     if file.extension().is_some_and(|e| e.eq_ignore_ascii_case("exe")) {
         return std::fs::copy(file, into.join(app.exe)).is_ok();
     }
-    // tar of Windows unpacks zips too
-    Command::new("tar.exe").arg("-xf").arg(file).arg("-C").arg(into).status().is_ok_and(|s| s.success())
+    unzip(file, into)
 }
 
 /// The portable version into `dir\<Id>`: unpacked next to it first, then swapped with the old one (which must not be

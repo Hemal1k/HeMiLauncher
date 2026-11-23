@@ -3,7 +3,6 @@
 //! normal interface back when HeMi Dark is removed. VLC writes its settings when it ends, so it must be closed meanwhile.
 
 use std::path::{Path, PathBuf};
-use std::process::Command;
 use std::sync::atomic::{AtomicU32, Ordering};
 
 /// The display scaling of Windows in % (the interface writes it every frame) – the size picked at the first install.
@@ -78,21 +77,29 @@ pub fn size_for_screen(sizes: &[u32]) -> u32 {
     sizes.iter().copied().min_by_key(|s| s.abs_diff(want)).unwrap_or(100)
 }
 
+/// VLC running: the list of processes of Windows (no tasklist.exe in the background).
 fn vlc_running() -> bool {
-    Command::new("tasklist.exe")
-        .args(["/FI", "IMAGENAME eq vlc.exe", "/NH"])
-        .creation_flags_hidden()
-        .output()
-        .is_ok_and(|o| String::from_utf8_lossy(&o.stdout).to_ascii_lowercase().contains("vlc.exe"))
-}
-
-trait Hidden {
-    fn creation_flags_hidden(&mut self) -> &mut Self;
-}
-impl Hidden for Command {
-    fn creation_flags_hidden(&mut self) -> &mut Self {
-        use std::os::windows::process::CommandExt;
-        self.creation_flags(0x0800_0000) // CREATE_NO_WINDOW
+    use windows_sys::Win32::Foundation::{CloseHandle, INVALID_HANDLE_VALUE};
+    use windows_sys::Win32::System::Diagnostics::ToolHelp::{CreateToolhelp32Snapshot, PROCESSENTRY32W, Process32FirstW, Process32NextW, TH32CS_SNAPPROCESS};
+    unsafe {
+        let snap = CreateToolhelp32Snapshot(TH32CS_SNAPPROCESS, 0);
+        if snap == INVALID_HANDLE_VALUE {
+            return false;
+        }
+        let mut e: PROCESSENTRY32W = std::mem::zeroed();
+        e.dwSize = std::mem::size_of::<PROCESSENTRY32W>() as u32;
+        let mut found = false;
+        let mut ok = Process32FirstW(snap, &mut e) != 0;
+        while ok {
+            let len = e.szExeFile.iter().position(|&c| c == 0).unwrap_or(e.szExeFile.len());
+            if String::from_utf16_lossy(&e.szExeFile[..len]).eq_ignore_ascii_case("vlc.exe") {
+                found = true;
+                break;
+            }
+            ok = Process32NextW(snap, &mut e) != 0;
+        }
+        CloseHandle(snap);
+        found
     }
 }
 
@@ -102,7 +109,7 @@ pub fn unpack(zip: &Path, version: &str) -> Result<(), String> {
     let stage = std::env::temp_dir().join("HeMiLauncher-HeMiDark");
     let _ = std::fs::remove_dir_all(&stage);
     std::fs::create_dir_all(&stage).map_err(|e| e.to_string())?;
-    let ok = Command::new("tar.exe").arg("-xf").arg(zip).arg("-C").arg(&stage).creation_flags_hidden().status().is_ok_and(|s| s.success());
+    let ok = crate::jobs::unzip(zip, &stage);
     // the folder with the colours: "HeMi Dark" inside the zip (or the zip itself)
     let root = std::fs::read_dir(&stage).ok().and_then(|r| r.flatten().map(|e| e.path()).find(|p| p.join("blue").is_dir())).unwrap_or(stage.clone());
     if !ok || !root.join("blue").is_dir() {

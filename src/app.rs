@@ -49,6 +49,8 @@ enum Action {
     DismissToast,
     /// the notes of a new version unfolded or folded in its card
     ToggleNotes(&'static str),
+    /// HeMi Dark: this colour and size set in VLC
+    VlcSkin(String, u32),
 }
 
 struct Toast {
@@ -76,6 +78,9 @@ pub struct LauncherApp {
     installed: HashMap<&'static str, Option<Installed>>,
     /// The portable versions in the chosen folder.
     portable: HashMap<&'static str, Option<catalog::Portable>>,
+    /// HeMi Dark: what there is to choose and what VLC uses now (read with the installed apps)
+    vlc_choices: (Vec<&'static str>, Vec<u32>),
+    vlc_now: Option<(String, u32)>,
     installed_read: Instant,
     autostart: bool,
     toast: Option<Toast>,
@@ -126,6 +131,8 @@ impl LauncherApp {
             icons,
             installed: HashMap::new(),
             portable: HashMap::new(),
+            vlc_choices: (Vec::new(), Vec::new()),
+            vlc_now: None,
             installed_read: Instant::now(),
             autostart: settings::autostart(),
             toast: None,
@@ -140,6 +147,8 @@ impl LauncherApp {
         self.installed = APPS.iter().map(|a| (a.id, catalog::installed(a))).collect();
         let dir = self.c.settings.lock().unwrap().portable();
         self.portable = APPS.iter().map(|a| (a.id, dir.as_deref().and_then(|d| catalog::portable(a, d)))).collect();
+        self.vlc_choices = crate::vlc::choices();
+        self.vlc_now = crate::vlc::current();
         self.installed_read = Instant::now();
     }
 
@@ -422,7 +431,10 @@ impl LauncherApp {
                     let who = match (&installed, &portable) {
                         (Some(i), _) if i.all_users => tr("Installed for all users", "Nainstalováno pro všechny"),
                         (Some(_), _) => tr("Installed", "Nainstalováno"),
+                        (None, Some(_)) if a.kind == Kind::Files => tr("In VLC", "Ve VLC"),
+                        (None, Some(_)) if a.kind == Kind::Extension => tr("Unpacked", "Rozbaleno"),
                         (None, Some(_)) => "Portable",
+                        _ if a.kind == Kind::Extension => tr("Browser extension", "Rozšíření prohlížeče"),
                         _ if a.kind == Kind::Files => tr("Skins for VLC", "Vzhledy pro VLC"),
                         _ if a.kind == Kind::Tool => tr("One program, no installation", "Jeden program, bez instalace"),
                         _ => tr("Not installed", "Nenainstalováno"),
@@ -481,17 +493,51 @@ impl LauncherApp {
                     if Btn::new(tr("Update", "Aktualizovat")).accent().show(ui, &p).clicked() {
                         acts.push(if portable.is_some() { Action::InstallPortable(a.id) } else { Action::Install(a.id) });
                     }
+                } else if have.is_some() && a.kind == Kind::Extension {
+                    let tip = tr("The folder of the extension – the browser loads it as an unpacked extension", "Složka rozšíření – prohlížeč ji načte jako rozbalené rozšíření");
+                    if Btn::new(tr("Show folder", "Zobrazit složku")).tip(tip).show(ui, &p).clicked() {
+                        acts.push(Action::Open(a.id));
+                    }
                 } else if have.is_some() {
                     if Btn::new(tr("Open", "Otevřít")).show(ui, &p).clicked() {
                         acts.push(Action::Open(a.id));
                     }
-                } else if a.kind == Kind::Files || a.kind == Kind::Tool {
+                } else if a.kind == Kind::Extension {
+                    let tip = tr(
+                        "Unpacks the extension into the folder of the portable versions; the browser then loads it (Load unpacked)",
+                        "Rozbalí rozšíření do složky portable verzí; prohlížeč ho pak načte (Načíst rozbalené)",
+                    );
+                    if Btn::new(tr("Download", "Stáhnout")).accent().enabled(release.is_some()).tip(tip).show(ui, &p).clicked() {
+                        acts.push(Action::Install(a.id));
+                    }
+                } else if have.is_some() && a.kind == Kind::Files {
+                    // the skin to use: a colour and a size, set in VLC at once
+                    let (colours, sizes) = (&self.vlc_choices.0, &self.vlc_choices.1);
+                    let (now_c, now_s) = self.vlc_now.clone().unwrap_or_default();
+                    let names: Vec<&str> = colours
+                        .iter()
+                        .map(|k| crate::vlc::COLOURS.iter().find(|c| c.0 == *k).map(|c| tr(c.1, c.2)).unwrap_or(k))
+                        .collect();
+                    let labels: Vec<String> = sizes.iter().map(|s| format!("{s} %")).collect();
+                    let label_refs: Vec<&str> = labels.iter().map(String::as_str).collect();
+                    let ci = colours.iter().position(|c| *c == now_c).unwrap_or(usize::MAX);
+                    let si = sizes.iter().position(|s| *s == now_s).unwrap_or(usize::MAX);
+                    if let Some(i) = crate::widgets::dropdown(ui, &p, ci, &names, 150.0) {
+                        let size = if now_s == 0 { crate::vlc::size_for_screen(sizes) } else { now_s };
+                        acts.push(Action::VlcSkin(colours[i].to_string(), size));
+                    }
+                    if let Some(i) = crate::widgets::dropdown(ui, &p, si, &label_refs, 96.0) {
+                        let colour = if now_c.is_empty() { "blue".to_string() } else { now_c.clone() };
+                        acts.push(Action::VlcSkin(colour, sizes[i]));
+                    }
+                } else if a.kind == Kind::Files {
+                    let tip = tr("Unpacks the skins into VLC and turns HeMi Dark on – then pick its colour and size here", "Rozbalí vzhledy do VLC a zapne HeMi Dark – barvu a velikost pak vybereš tady");
+                    if Btn::new(tr("Install to VLC", "Nainstalovat do VLC")).accent().enabled(release.is_some()).tip(tip).show(ui, &p).clicked() {
+                        acts.push(Action::Install(a.id));
+                    }
+                } else if a.kind == Kind::Tool {
                     let b = Btn::new(tr("Download", "Stáhnout")).accent().enabled(release.is_some());
-                    let tip = if a.kind == Kind::Tool {
-                        tr("The program into the Downloads folder – best copied to a USB stick", "Program do složky Stažené soubory – nejlépe zkopírovat na USB disk")
-                    } else {
-                        tr("The skins into the Downloads folder", "Vzhledy do složky Stažené soubory")
-                    };
+                    let tip = tr("The program into the Downloads folder – best copied to a USB stick", "Program do složky Stažené soubory – nejlépe zkopírovat na USB disk");
                     if b.tip(tip).show(ui, &p).clicked() {
                         acts.push(Action::Install(a.id));
                     }
@@ -512,7 +558,13 @@ impl LauncherApp {
                         acts.push(Action::Uninstall(a.id));
                     }
                     if portable.is_some()
-                        && Btn::new("").icon(glyph::DELETE).subtle().tip(tr("Remove the portable version", "Odstranit portable verzi")).show(ui, &p).clicked()
+                        && Btn::new("").icon(glyph::DELETE).subtle().tip(match a.kind {
+                            Kind::Files => tr("Remove from VLC (its normal look back)", "Odebrat z VLC (vrátí jeho běžný vzhled)"),
+                            Kind::Extension => tr("Remove the unpacked extension (remove it in the browser too)", "Odstranit rozbalené rozšíření (odeber ho i v prohlížeči)"),
+                            _ => tr("Remove the portable version", "Odstranit portable verzi"),
+                        })
+                        .show(ui, &p)
+                        .clicked()
                     {
                         acts.push(Action::RemovePortable(a.id));
                     }
@@ -750,6 +802,13 @@ impl LauncherApp {
                     });
                 }
                 Action::UpdateSelf => self.c.spawn(|c| c.update_self()),
+                Action::VlcSkin(colour, size) => {
+                    match crate::vlc::apply(&colour, size) {
+                        Ok(()) => self.toast(tr("Set in VLC – start (or restart) VLC", "Nastaveno ve VLC – spusť (nebo restartuj) VLC"), Tone::Success),
+                        Err(e) => self.toast(e, Tone::Caution),
+                    }
+                    self.vlc_now = crate::vlc::current();
+                }
                 Action::Open(id) => {
                     if let Some(app) = crate::jobs::find(id) {
                         let exe = match (self.installed.get(id), self.portable.get(id)) {
@@ -758,7 +817,12 @@ impl LauncherApp {
                             _ => None,
                         };
                         if let Some(exe) = exe {
-                            crate::jobs::open(&exe);
+                            if app.kind == Kind::Extension {
+                                // the folder the browser loads, not the manifest
+                                let _ = std::process::Command::new("explorer.exe").arg(exe.parent().unwrap_or(&exe)).spawn();
+                            } else {
+                                crate::jobs::open(&exe);
+                            }
                         }
                     }
                 }
@@ -823,6 +887,8 @@ impl LauncherApp {
 
 impl eframe::App for LauncherApp {
     fn ui(&mut self, ui: &mut egui::Ui, _frame: &mut eframe::Frame) {
+        // the display scaling, for the size of the VLC skin
+        crate::vlc::SYSTEM_SCALE.store((ui.ctx().pixels_per_point() * 100.0).round() as u32, std::sync::atomic::Ordering::Relaxed);
         let ctx = ui.ctx().clone();
         self.poll();
         // started hidden: eframe shows the window after its first frames, so it is hidden again then

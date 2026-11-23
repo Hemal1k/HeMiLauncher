@@ -191,8 +191,22 @@ impl Ctx {
                     format!("{} {}", app.name, tr("installed", "nainstalován"))
                 }
             }),
+            // the extension into the folder of the portable versions (Downloads unless set): the folder is shown, the
+            // browser loads it once (Load unpacked) and reloads it after an update
+            catalog::Kind::Extension => match &dir {
+                Some(d) => jobs::install_portable(app, &release, d, progress).map(|()| {
+                    let folder = d.join(app.id);
+                    if had.is_some() {
+                        format!("{} {} {} – {}", app.name, tr("updated to", "aktualizován na"), release.version, tr("reload it in the browser (Extensions → ⟳)", "v prohlížeči ho obnov (Rozšíření → ⟳)"))
+                    } else {
+                        let _ = std::process::Command::new("explorer.exe").arg(&folder).spawn();
+                        format!("{} – {} {} – {}", app.name, tr("unpacked in", "rozbalen v"), folder.display(), tr("in the browser: Extensions → Developer mode → Load unpacked → this folder", "v prohlížeči: Rozšíření → Režim pro vývojáře → Načíst rozbalené → tato složka"))
+                    }
+                }),
+                None => Err(tr("Choose a folder for portable versions in the settings.", "V nastavení vyber složku pro portable verze.").into()),
+            },
             catalog::Kind::Tool => jobs::download_tool(app, &release, progress).map(|f| format!("{} – {}", app.name, f.display())),
-            catalog::Kind::Files => jobs::download_files(app, &release, progress).map(|_| format!("{} – {}", app.name, tr("downloaded into Downloads", "staženo do složky Stažené soubory"))),
+            catalog::Kind::Files => jobs::install_vlc_skins(app, &release, progress),
         };
         self.state.lock().unwrap().busy.remove(id);
         match result {
@@ -216,6 +230,15 @@ impl Ctx {
     /// Removes the portable version of an app.
     pub fn remove_portable(&self, id: &'static str) {
         let Some(app) = jobs::find(id) else { return };
+        // HeMi Dark: VLC back to its normal interface, the skins removed
+        if app.kind == catalog::Kind::Files {
+            if let Err(e) = crate::vlc::remove() {
+                self.message(format!("{}: {e}", app.name), false);
+            }
+            self.refresh_updates();
+            self.repaint();
+            return;
+        }
         let Some(dir) = self.settings.lock().unwrap().portable() else { return };
         if let Err(e) = jobs::remove_portable(app, &dir) {
             self.message(format!("{}: {e}", app.name), false);

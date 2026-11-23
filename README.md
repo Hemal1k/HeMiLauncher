@@ -24,11 +24,16 @@ Windows 10 / 11, x64 and ARM64. Nothing else needs to be installed.
 ## What it does
 
 - **The apps**: [HeMiDock](https://github.com/Hemal1k/HeMiDock), [HeMiPix](https://github.com/Hemal1k/HeMiPix),
-  [HeMiUnlocker](https://github.com/Hemal1k/HeMiUnlocker), [HeMiPad](https://github.com/Hemal1k/HeMiPad) and
-  [HeMi Dark](https://github.com/Hemal1k/HeMiDark) and [HeMiMizer](https://github.com/Hemal1k/HeMiMizer) – each with its version, what's new, Install / Update / Open and Uninstall.
+  [HeMiUnlocker](https://github.com/Hemal1k/HeMiUnlocker), [HeMiPad](https://github.com/Hemal1k/HeMiPad),
+  [HeMiTube](https://github.com/Hemal1k/HeMiTube), [HeMiMizer](https://github.com/Hemal1k/HeMiMizer) and
+  [HeMi Dark](https://github.com/Hemal1k/HeMiDark) – each with its version, what's new, Install / Update / Open and Uninstall.
 - **Installing** runs the installer of the app with its pages (just for you or for all users, a desktop shortcut…).
   **Updating** runs it quietly – for apps installed for all users Windows asks for administrator rights.
-- **Update all** at once; HeMi Dark (skins for VLC) and HeMiMizer (one program, run after reinstalling Windows) are downloaded into the Downloads folder.
+- **Update all** at once; HeMiMizer (one program, run after reinstalling Windows) is downloaded into the Downloads folder.
+- **HeMiTube** (a browser extension for YouTube) is unpacked into the folder of the portable versions – the browser loads it
+  once (*Extensions → Developer mode → Load unpacked*), later updates replace it in place (then ⟳ in the browser).
+- **HeMi Dark** goes straight into VLC: the skins into its skins folder, turned on in its settings; pick the colour and the
+  size in its card (VLC must be closed meanwhile). Removing it brings the normal look of VLC back.
 - **In the background**: after the start and every 4 hours it looks for new versions, shows a Windows notification, and can
   install them by itself (off by default). Closing the window hides it in the notification area; it can start with Windows.
 - **Checked downloads**: every installer and zip is compared with `SHA256SUMS.txt` of its release before it is run or unpacked.

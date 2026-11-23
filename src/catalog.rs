@@ -8,11 +8,15 @@ use std::path::PathBuf;
 pub enum Kind {
     /// An app with an installer ("<Id>-Setup.exe", uninstall entry "<Id>_is1").
     App,
-    /// Files without an installer (HeMi Dark: skins for VLC) – downloaded into the Downloads folder.
+    /// Files without an installer (HeMi Dark: skins for VLC) – unpacked into the skins folder of VLC and set there
+    /// (vlc.rs); the colour and the size are picked in its card.
     Files,
     /// One program without an installer, run once (HeMiMizer: after reinstalling Windows) – "<Id>.exe" (on ARM
     /// "<Id>-arm64.exe" when the release has it – HeMiMizer has not, x64 runs there too) into the Downloads folder.
     Tool,
+    /// A browser extension (HeMiTube): "<Id>.zip" unpacked into the folder of the portable versions (`<dir>\<Id>`, with
+    /// the version file), loaded once in the browser as an unpacked extension; an update unpacks the new one in place.
+    Extension,
 }
 
 #[derive(Clone, Copy, Debug)]
@@ -65,6 +69,15 @@ pub const APPS: &[AppInfo] = &[
         kind: Kind::App,
         line: ("A simple notepad", "Jednoduchý poznámkový blok"),
         icon: include_bytes!("../assets/apps/hemipad.rgba"),
+    },
+    AppInfo {
+        id: "HeMiTube",
+        name: "HeMiTube",
+        // what makes the folder an extension (checked like the exe of a portable app)
+        exe: "manifest.json",
+        kind: Kind::Extension,
+        line: ("YouTube calmer: theatre mode, dislikes, quality, codecs, no Shorts", "Klidnější YouTube: režim kina, dislajky, kvalita, kodeky, bez Shorts"),
+        icon: include_bytes!("../assets/apps/hemitube.rgba"),
     },
     AppInfo {
         id: "HeMiDark",
@@ -154,7 +167,11 @@ impl Portable {
 }
 
 pub fn portable(app: &AppInfo, dir: &std::path::Path) -> Option<Portable> {
-    if app.kind != Kind::App {
+    // HeMi Dark: the skins in the folder of VLC
+    if app.kind == Kind::Files {
+        return crate::vlc::installed().map(|version| Portable { version, folder: crate::vlc::folder() });
+    }
+    if app.kind != Kind::App && app.kind != Kind::Extension {
         return None;
     }
     let folder = dir.join(app.id);

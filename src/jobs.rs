@@ -82,6 +82,10 @@ pub fn install(app: &AppInfo, release: &Release, installed: Option<&Installed>, 
 /// The portable version of this PC's architecture (the x64 one when the release has no ARM64 one): the exe itself when the
 /// release has it (a program of one file), else the zip (HeMiDock, and the releases before the exes).
 fn portable_asset(app: &AppInfo, release: &Release) -> String {
+    // a browser extension: one zip for every processor
+    if app.kind == catalog::Kind::Extension {
+        return format!("{}.zip", app.id);
+    }
     let arm = cfg!(target_arch = "aarch64");
     for ext in ["exe", "zip"] {
         let names = if arm { vec![format!("{}-Portable-arm64.{ext}", app.id), format!("{}-Portable.{ext}", app.id)] } else { vec![format!("{}-Portable.{ext}", app.id)] };
@@ -152,7 +156,30 @@ pub fn remove_portable(app: &AppInfo, dir: &Path) -> Result<(), String> {
     std::fs::remove_dir_all(&folder).map_err(|_| format!("{} – {}", app.name, crate::i18n::tr("close it first, it is running", "nejdřív ji zavři, běží")))
 }
 
+/// HeMi Dark into VLC: the skins unpacked into its skins folder and one set – the one chosen before, else blue in the
+/// size of the display scaling. With VLC running the skins are unpacked only (it would write its old settings back).
+pub fn install_vlc_skins(app: &AppInfo, release: &Release, progress: impl FnMut(f32)) -> Result<String, String> {
+    let tr = crate::i18n::tr;
+    let name = format!("{}-Skins.zip", app.id);
+    let zip = temp().join(&name);
+    fetch(release, &name, &zip, progress)?;
+    let r = crate::vlc::unpack(&zip, &release.version);
+    let _ = std::fs::remove_file(&zip);
+    r?;
+    let (colours, sizes) = crate::vlc::choices();
+    let (colour, size) = match crate::vlc::current() {
+        Some((c, s)) if colours.contains(&c.as_str()) && sizes.contains(&s) => (c, s),
+        Some((c, _)) if colours.contains(&c.as_str()) => (c, crate::vlc::size_for_screen(&sizes)),
+        _ => ("blue".to_string(), crate::vlc::size_for_screen(&sizes)),
+    };
+    Ok(match crate::vlc::apply(&colour, size) {
+        Ok(()) => format!("{} {} – {}", app.name, release.version, tr("set in VLC, start VLC", "nastaven ve VLC, spusť VLC")),
+        Err(e) => format!("{} {} – {}. {e}", app.name, release.version, tr("unpacked", "rozbalen")),
+    })
+}
+
 /// HeMi Dark: the skins zip into the Downloads folder, shown in File Explorer.
+#[allow(dead_code)]
 pub fn download_files(app: &AppInfo, release: &Release, progress: impl FnMut(f32)) -> Result<PathBuf, String> {
     let name = format!("{}-Skins.zip", app.id);
     let downloads = crate::settings::downloads();

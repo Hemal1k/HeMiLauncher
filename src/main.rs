@@ -12,6 +12,7 @@ mod reg;
 mod settings;
 mod theme;
 mod tray;
+mod vlc;
 mod watch;
 mod widgets;
 

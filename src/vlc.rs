@@ -145,7 +145,7 @@ pub fn apply(colour: &str, size: u32) -> Result<(), String> {
         return Err(format!("{} {}", tr("Missing skin", "Chybí vzhled"), file.display()));
     }
     if vlc_running() {
-        return Err(tr("Close VLC first – it writes its settings when it ends.", "Nejdřív zavři VLC – při ukončení přepisuje svoje nastavení.").into());
+        return Err(tr("Close VLC first – it writes its settings when it ends.", "Nejdřív zavři VLC – při ukončení přepíše své nastavení.").into());
     }
     edit(|text| {
         let t = set(text, "core", "intf", "skins2,any");
@@ -157,7 +157,7 @@ pub fn apply(colour: &str, size: u32) -> Result<(), String> {
 pub fn remove() -> Result<(), String> {
     let tr = crate::i18n::tr;
     if vlc_running() {
-        return Err(tr("Close VLC first – it writes its settings when it ends.", "Nejdřív zavři VLC – při ukončení přepisuje svoje nastavení.").into());
+        return Err(tr("Close VLC first – it writes its settings when it ends.", "Nejdřív zavři VLC – při ukončení přepíše své nastavení.").into());
     }
     if current().is_some() {
         edit(|text| set(text, "core", "intf", "qt"))?;

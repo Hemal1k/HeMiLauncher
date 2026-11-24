@@ -1,4 +1,4 @@
-// HeMi Launcher â€“ installs the HeMi apps and keeps them up to date (and itself).
+// HeMi Launcher – installs the HeMi apps and keeps them up to date (and itself).
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
 mod app;

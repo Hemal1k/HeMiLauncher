@@ -1,5 +1,5 @@
 //! A notification of Windows under the name and icon of HeMi Launcher (its own app id), and the state the other HeMi apps
-//! read: %LocalAppData%\HeMiLauncher\updates.txt – one line "<id> <new version>" per app with an update (HeMiDock shows
+//! read: %LocalAppData%\HeMi\HeMiLauncher\updates.txt – one line "<id> <new version>" per app with an update (HeMiDock shows
 //! them as a status icon that opens the launcher).
 
 use std::path::PathBuf;

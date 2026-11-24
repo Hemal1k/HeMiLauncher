@@ -4,7 +4,7 @@
 
 use crate::catalog::{self, LAUNCHER};
 use crate::github::Release;
-use crate::i18n::tr;
+use crate::i18n::{plural, tr};
 use crate::jobs::{self, Releases};
 use crate::settings::Settings;
 use eframe::egui;
@@ -134,7 +134,12 @@ impl Ctx {
             }
         } else if s.notify && !new.is_empty() {
             let names: Vec<&str> = new.iter().filter_map(|(id, _)| jobs::find(id)).map(|a| a.name).collect();
-            let title = if new.len() == 1 { tr("A new version", "Nová verze").to_string() } else { format!("{} {}", new.len(), tr("new versions", "nových verzí")) };
+            let n = new.len();
+            let title = if n == 1 {
+                tr("A new version", "Nová verze").to_string()
+            } else {
+                format!("{n} {}", plural(n, "", tr("new versions", "nové verze"), tr("new versions", "nových verzí")))
+            };
             crate::notify::toast(&title, &names.join(", "));
         }
     }
@@ -177,7 +182,7 @@ impl Ctx {
             catalog::Kind::App if portable => match &dir {
                 Some(d) => jobs::install_portable(app, &release, d, progress).map(|()| {
                     if had.is_some() {
-                        format!("{} {} {} (portable)", app.name, tr("updated to", "aktualizován na"), release.version)
+                        format!("{} {} {} {}", app.name, tr("updated to", "aktualizován na"), release.version, tr("(portable)", "(portable verze)"))
                     } else {
                         format!("{} – {} {}", app.name, tr("portable version in", "portable verze v"), d.join(app.id).display())
                     }
@@ -191,7 +196,7 @@ impl Ctx {
                     format!("{} {}", app.name, tr("installed", "nainstalován"))
                 }
             }),
-            // the extension into the folder of the portable versions (Downloads unless set): the folder is shown, the
+            // the extension into its own folder in %AppData%\HeMi (not the folder of the portable versions): the
             // browser loads it once (Load unpacked) and reloads it after an update
             catalog::Kind::Extension => match Some(catalog::extension_base()) {
                 Some(d) => jobs::install_portable(app, &release, &d, progress).map(|()| {
@@ -301,8 +306,7 @@ impl Ctx {
 pub fn tip(updates: usize) -> String {
     match updates {
         0 => "HeMi Launcher".into(),
-        1 => format!("HeMi Launcher – {}", tr("1 update", "1 aktualizace")),
-        n => format!("HeMi Launcher – {n} {}", if crate::i18n::cz() && n < 5 { "aktualizace" } else { tr("updates", "aktualizací") }),
+        n => format!("HeMi Launcher – {n} {}", plural(n, tr("update", "aktualizace"), tr("updates", "aktualizace"), tr("updates", "aktualizací"))),
     }
 }
 

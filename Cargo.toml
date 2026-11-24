@@ -1,6 +1,6 @@
 [package]
 name = "hemilauncher"
-version = "1.4.3"
+version = "1.4.4"
 edition = "2024"
 description = "HeMi Launcher – installs and updates the HeMi apps for Windows"
 authors = ["Richard Hemala"]

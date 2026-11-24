@@ -36,3 +36,26 @@ pub fn tr<'a>(en: &'a str, cs: &'a str) -> &'a str {
     if cz() { cs } else { en }
 }
 
+
+/// The form of a word for a count, by the Czech rule: 1 → `one`, 2–4 → `few`, else `many` (English: `few` = `many`).
+pub fn plural<'a>(n: usize, one: &'a str, few: &'a str, many: &'a str) -> &'a str {
+    match n {
+        1 => one,
+        2..=4 => few,
+        _ => many,
+    }
+}
+
+/// A share in %: "42 %" in Czech, "42%" in English.
+pub fn percent(n: impl std::fmt::Display) -> String {
+    if cz() { format!("{n} %") } else { format!("{n}%") }
+}
+
+/// A date from GitHub ("2026-11-23"): as it is in English, "23. 11. 2026" in Czech.
+pub fn date(iso: &str) -> String {
+    let parts: Vec<u32> = iso.split('-').filter_map(|p| p.parse().ok()).collect();
+    match parts[..] {
+        [y, m, d] if cz() => format!("{d}. {m}. {y}"),
+        _ => iso.to_string(),
+    }
+}

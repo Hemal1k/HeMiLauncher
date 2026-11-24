@@ -55,7 +55,68 @@ fn temp() -> PathBuf {
 pub fn unzip(file: &Path, into: &Path) -> bool {
     let Ok(f) = std::fs::File::open(file) else { return false };
     let Ok(mut z) = zip::ZipArchive::new(f) else { return false };
-    z.extract(into).is_ok()
+    unpack_entries(&mut z, into).is_ok()
+}
+
+/// The entries one by one instead of `ZipArchive::extract` (RUSTSEC-2026-0368 / 0429: its symbolic links could point out
+/// of the folder, and a link with a huge declared size ended the process): only files and folders, only inside `into`
+/// (`enclosed_name`), no links, at most 1 GB unpacked in all.
+fn unpack_entries<R: std::io::Read + std::io::Seek>(z: &mut zip::ZipArchive<R>, into: &Path) -> std::io::Result<()> {
+    const LIMIT: u64 = 1 << 30;
+    let mut total = 0u64;
+    for i in 0..z.len() {
+        let mut entry = z.by_index(i)?;
+        if entry.is_symlink() {
+            continue;
+        }
+        let Some(rel) = entry.enclosed_name() else { continue };
+        let out = into.join(rel);
+        if entry.is_dir() {
+            std::fs::create_dir_all(&out)?;
+            continue;
+        }
+        total = total.saturating_add(entry.size());
+        if total > LIMIT {
+            return Err(std::io::Error::other("the zip unpacks to more than 1 GB"));
+        }
+        if let Some(parent) = out.parent() {
+            std::fs::create_dir_all(parent)?;
+        }
+        let mut to = std::fs::File::create(&out)?;
+        // never more than the declared size, whatever the entry really holds
+        std::io::copy(&mut std::io::Read::take(&mut entry, LIMIT), &mut to)?;
+    }
+    Ok(())
+}
+
+#[cfg(test)]
+mod unzip_tests {
+    use std::io::Write;
+
+    #[test]
+    fn unpacks_files_and_leaves_out_escapes() {
+        let dir = std::env::temp_dir().join("hemilauncher-unzip-test");
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        let zip_file = dir.join("t.zip");
+        {
+            let mut w = zip::ZipWriter::new(std::fs::File::create(&zip_file).unwrap());
+            let o = zip::write::SimpleFileOptions::default();
+            w.add_directory("folder/", o).unwrap();
+            w.start_file("folder/a.txt", o).unwrap();
+            w.write_all(b"hello").unwrap();
+            w.start_file("../escape.txt", o).unwrap();
+            w.write_all(b"bad").unwrap();
+            w.add_symlink("link", "C:\\Windows", o).unwrap();
+            w.finish().unwrap();
+        }
+        let out = dir.join("out");
+        assert!(super::unzip(&zip_file, &out));
+        assert_eq!(std::fs::read_to_string(out.join("folder").join("a.txt")).unwrap(), "hello");
+        assert!(!dir.join("escape.txt").exists());
+        assert!(!out.join("link").exists());
+        let _ = std::fs::remove_dir_all(&dir);
+    }
 }
 
 /// Downloads a file of the release into `to` and checks it.
@@ -76,7 +137,7 @@ pub fn install(app: &AppInfo, release: &Release, installed: Option<&Installed>, 
     if let Some(i) = installed {
         cmd.args(["/VERYSILENT", "/SUPPRESSMSGBOXES", "/NORESTART", "/UPDATE", if i.all_users { "/ALLUSERS" } else { "/CURRENTUSER" }]);
     }
-    let status = cmd.status().map_err(|e| e.to_string())?;
+    let status = cmd.status().map_err(|e| format!("{} ({e})", crate::i18n::tr("The installer could not be started", "Instalátor nešlo spustit")))?;
     let _ = std::fs::remove_file(&file);
     // 0 done; the rest cancelled by the user (or administrator rights refused), or failed
     match status.code() {
@@ -84,7 +145,7 @@ pub fn install(app: &AppInfo, release: &Release, installed: Option<&Installed>, 
         // 1: closed at its first question (just for me / all users), 2: cancelled in the wizard, 5: cancelled while installing
         Some(1) | Some(2) | Some(5) if installed.is_none() => Err(CANCELLED.into()),
         Some(2) | Some(5) => Err(CANCELLED.into()),
-        c => Err(format!("{} {}", crate::i18n::tr("The installer ended with", "Instalátor skončil s kódem"), c.unwrap_or(-1))),
+        c => Err(format!("{} {}", crate::i18n::tr("The installer ended with code", "Instalátor skončil s kódem"), c.unwrap_or(-1))),
     }
 }
 
@@ -135,7 +196,7 @@ pub fn install_portable(app: &AppInfo, release: &Release, dir: &Path, progress: 
     };
     let Some(root) = root.filter(|_| ok) else {
         let _ = std::fs::remove_dir_all(&new);
-        return Err(tr("The portable version could not be unpacked.", "Portable verzi nešlo připravit.").into());
+        return Err(tr("The portable version could not be unpacked.", "Portable verzi nešlo rozbalit.").into());
     };
     std::fs::write(root.join(catalog::PORTABLE_VERSION), &release.version).map_err(|e| e.to_string())?;
     if target.exists() {
@@ -159,7 +220,7 @@ pub fn install_portable(app: &AppInfo, release: &Release, dir: &Path, progress: 
 pub fn remove_portable(app: &AppInfo, dir: &Path) -> Result<(), String> {
     let folder = dir.join(app.id);
     if !folder.join(catalog::PORTABLE_VERSION).exists() {
-        return Err("?".into());
+        return Err(crate::i18n::tr("The folder was not made by HeMi Launcher.", "Složku nevytvořil HeMi Launcher.").into());
     }
     std::fs::remove_dir_all(&folder).map_err(|_| format!("{} – {}", app.name, crate::i18n::tr("close it first, it is running", "nejdřív ji zavři, běží")))
 }
@@ -181,8 +242,8 @@ pub fn install_vlc_skins(app: &AppInfo, release: &Release, progress: impl FnMut(
         _ => ("blue".to_string(), crate::vlc::size_for_screen(&sizes)),
     };
     Ok(match crate::vlc::apply(&colour, size) {
-        Ok(()) => format!("{} {} – {}", app.name, release.version, tr("set in VLC, start VLC", "nastaven ve VLC, spusť VLC")),
-        Err(e) => format!("{} {} – {}. {e}", app.name, release.version, tr("unpacked", "rozbalen")),
+        Ok(()) => format!("{} {} – {}", app.name, release.version, tr("set in VLC, start VLC", "nastaveno ve VLC, spusť VLC")),
+        Err(e) => format!("{} {} – {}. {e}", app.name, release.version, tr("unpacked", "rozbaleno")),
     })
 }
 
@@ -212,9 +273,9 @@ pub fn download_tool(app: &AppInfo, release: &Release, progress: impl FnMut(f32)
 pub fn uninstall(i: &Installed) -> Result<(), String> {
     let exe = i.uninstall.trim().trim_matches('"').to_string();
     if exe.is_empty() {
-        return Err("No uninstaller.".into());
+        return Err(crate::i18n::tr("No uninstaller found.", "Odinstalátor nebyl nalezen.").into());
     }
-    Command::new(exe).status().map(|_| ()).map_err(|e| e.to_string())
+    Command::new(exe).status().map(|_| ()).map_err(|e| format!("{} ({e})", crate::i18n::tr("The uninstaller could not be started", "Odinstalátor nešlo spustit")))
 }
 
 pub fn open(exe: &Path) {
@@ -250,7 +311,7 @@ pub fn update_self(release: &Release, show: bool, progress: impl FnMut(f32)) -> 
             let ok = unpack_portable(&LAUNCHER, &zip, &out);
             let new = out.join("HeMiLauncher.exe");
             if !ok || !new.exists() {
-                return Err("The new version could not be unpacked.".into());
+                return Err(crate::i18n::tr("The new version could not be unpacked.", "Novou verzi nešlo rozbalit.").into());
             }
             let old = exe.with_extension("exe.old");
             let _ = std::fs::remove_file(&old);

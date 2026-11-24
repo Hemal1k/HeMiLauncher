@@ -76,7 +76,7 @@ pub const APPS: &[AppInfo] = &[
         // what makes the folder an extension (checked like the exe of a portable app)
         exe: "manifest.json",
         kind: Kind::Extension,
-        line: ("YouTube calmer: theatre mode, dislikes, quality, codecs, no Shorts", "Klidnější YouTube: režim kina, dislajky, kvalita, kodeky, bez Shorts"),
+        line: ("A calmer YouTube: theater mode, dislikes, quality, codecs, no Shorts", "Klidnější YouTube: režim kina, dislajky, kvalita, kodeky, bez Shorts"),
         icon: include_bytes!("../assets/apps/hemitube.rgba"),
     },
     AppInfo {

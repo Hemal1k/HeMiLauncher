@@ -90,16 +90,16 @@ pub fn open_guide(b: &Browser, folder: &Path) -> Result<(), String> {
 <p class="lead">{after}</p>
 </section>"#,
             title = t("Add HeMiTube to your browser", "Přidej HeMiTube do prohlížeče"),
-            lead = esc(&format!("{} – {}", b.name, if cz { "tři kroky, prohlížeč je za tebe žádnému programu udělat nedovolí." } else { "three steps, the browser lets no program do them for you." })),
+            lead = esc(&format!("{} – {}", b.name, if cz { "tři kroky – prohlížeč nedovolí žádnému programu udělat je za tebe." } else { "three steps – the browser won't let any program do them for you." })),
             s1 = t("Copy this address, paste it into the address bar and press Enter:", "Zkopíruj tuto adresu, vlož ji do adresního řádku a stiskni Enter:"),
             s2 = esc(&if cz { format!("Zapni {dev} ({dev_where}).") } else { format!("Turn on {dev} ({dev_where}).") }),
             s3 = esc(&if cz {
                 format!("Klikni na {load} a vyber tuto složku (vlož ji do adresního řádku dialogu):")
             } else {
-                format!("Click {load} and choose this folder (paste it into the address line of the dialog):")
+                format!("Click {load} and choose this folder (paste it into the address bar of the dialog):")
             }),
             after = t(
-                "HeMi Launcher updates the extension in this folder; after an update click ⟳ at HeMiTube on the extensions page.",
+                "HeMi Launcher updates the extension in this folder; after an update, click ⟳ next to HeMiTube on the extensions page.",
                 "HeMi Launcher rozšíření v této složce aktualizuje; po aktualizaci klikni na stránce rozšíření u HeMiTube na ⟳.",
             ),
             copy = t("Copy", "Kopírovat"),

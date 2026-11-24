@@ -1,4 +1,4 @@
-//! What HeMi Launcher remembers (%AppData%\HeMiLauncher\settings.ini), the start with Windows (the Run value of the user)
+//! What HeMi Launcher remembers (%AppData%\HeMi\HeMiLauncher\settings.ini), the start with Windows (the Run value of the user)
 //! and the place the other HeMi apps find it by (HKCU\Software\HeMi\HeMiLauncher, value Path).
 
 use crate::reg;
@@ -14,7 +14,7 @@ pub struct Settings {
     pub notify: bool,
     /// The × of the window hides it into the notification area (the launcher keeps watching).
     pub tray_on_close: bool,
-    /// Where the portable versions go (empty: the launcher does not manage portable versions).
+    /// Where the portable versions go (empty: the Downloads folder).
     pub portable_dir: String,
 }
 
@@ -33,7 +33,6 @@ fn file() -> PathBuf {
 }
 
 impl Settings {
-    /// The folder of the portable versions, when one is chosen.
     /// Where the portable versions go: the folder chosen in the settings, else the Downloads folder.
     pub fn portable(&self) -> Option<PathBuf> {
         if self.portable_dir.trim().is_empty() { Some(downloads()) } else { Some(PathBuf::from(self.portable_dir.trim())) }

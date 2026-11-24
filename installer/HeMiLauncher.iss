@@ -1,6 +1,6 @@
 ﻿; HeMi Launcher installer (Inno Setup 6), built by release.ps1:  ISCC /DAppVersion=1.0.0 /DAppExe=<HeMiLauncher.exe> /DOutputDir=<folder>
 ; For the current user (no administrator) or for all users - the installer asks. /UPDATE (the launcher updates itself):
-; quiet, the launcher starts again hidden in the notification area. Uninstalling removes the start with Windows, the
+; quiet, the launcher starts again hidden in the notification area (with /OPEN=1 with its window). Uninstalling removes the start with Windows, the
 ; place the other HeMi apps find the launcher by, and its notifications.
 
 #ifndef AppVersion
@@ -48,10 +48,27 @@ WizardStyle=modern dynamic windows11
 WizardSizePercent=120
 CloseApplications=force
 LicenseFile=..\LICENSE
+; the language of Windows (Czech or English) without asking
+ShowLanguageDialog=auto
 
 [Languages]
-; English only
+; English, Czech on Czech Windows
 Name: "en"; MessagesFile: "compiler:Default.isl"
+Name: "cs"; MessagesFile: "compiler:Languages\Czech.isl"
+
+[CustomMessages]
+en.AutoStart=Start with Windows (hidden in the notification area, checks for updates)
+cs.AutoStart=Spouštět s Windows (skrytě v oznamovací oblasti, kontroluje aktualizace)
+en.UpdatesGroup=Updates:
+cs.UpdatesGroup=Aktualizace:
+en.Updates=Look for new versions automatically
+cs.Updates=Automaticky kontrolovat nové verze
+en.UpdatesInstall=Install them automatically (quietly, in the background)
+cs.UpdatesInstall=Automaticky je instalovat (potichu na pozadí)
+en.DeleteSettings=Delete the settings of HeMi Launcher too?
+cs.DeleteSettings=Smazat i nastavení HeMi Launcheru?
+en.KeepSettings=Keep them to use them again when you install HeMi Launcher later.
+cs.KeepSettings=Ponech je, pokud je budeš chtít použít při pozdější instalaci HeMi Launcheru.
 
 [Files]
 ; x64, and the ARM64 program on Windows on ARM when the installer has it
@@ -63,13 +80,12 @@ Source: "{#AppExe}"; DestDir: "{app}"; Flags: ignoreversion
 #endif
 
 [Tasks]
-Name: "autostart"; Description: "Start with Windows (hidden in the notification area, checks for updates)"
+Name: "autostart"; Description: "{cm:AutoStart}"
 Name: "desktopicon"; Description: "{cm:CreateDesktopIcon}"; GroupDescription: "{cm:AdditionalIcons}"; Flags: unchecked
-; the updates (written for the launcher to take at its start – see SaveUpdateChoice); installing them needs looking for them
-; two separate boxes (as parent and child, unticking the second unticked the first too, 2026-11-19); installing them
-; needs looking for them – SaveUpdateChoice
-Name: "updates"; Description: "Look for new versions automatically"; GroupDescription: "Updates:"
-Name: "updatesinstall"; Description: "Install them automatically (quietly, in the background)"; GroupDescription: "Updates:"; Flags: unchecked
+; the updates (written for the launcher to take at its start – see SaveUpdateChoice): two separate boxes (as parent and
+; child, unticking the second unticked the first too, 2026-11-19); installing them needs looking for them
+Name: "updates"; Description: "{cm:Updates}"; GroupDescription: "{cm:UpdatesGroup}"
+Name: "updatesinstall"; Description: "{cm:UpdatesInstall}"; GroupDescription: "{cm:UpdatesGroup}"; Flags: unchecked
 
 [Icons]
 Name: "{autoprograms}\HeMi Launcher"; Filename: "{app}\HeMiLauncher.exe"
@@ -195,7 +211,7 @@ begin
   Dir := ExpandConstant('{userappdata}\HeMi\HeMiLauncher');
   if not DirExists(Dir) then Exit;
   if UninstallSilent then Exit;
-  if MsgBox('Delete the settings of HeMi Launcher too?' + #13#10#13#10 + 'Keep them to use them again when you install HeMi Launcher later.', mbConfirmation, MB_YESNO or MB_DEFBUTTON2) = IDYES then
+  if MsgBox(CustomMessage('DeleteSettings') + #13#10#13#10 + CustomMessage('KeepSettings'), mbConfirmation, MB_YESNO or MB_DEFBUTTON2) = IDYES then
   begin
     DelTree(Dir, True, True, True);
     RemoveDir(ExpandConstant('{userappdata}\HeMi'));

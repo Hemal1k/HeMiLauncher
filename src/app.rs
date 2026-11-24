@@ -236,7 +236,7 @@ impl LauncherApp {
                 }
                 // when it last looked (the state of each app is in its card)
                 if st.checking {
-                    ui.label(RichText::new(tr("Checking…", "Hledám…")).size(12.0).color(p.text2));
+                    ui.label(RichText::new(tr("Checking…", "Kontroluji…")).size(12.0).color(p.text2));
                     ui.add(egui::Spinner::new().size(14.0).color(p.accent_text));
                 } else if let Some(t) = st.checked {
                     ui.label(RichText::new(ago(t)).size(12.0).color(p.text3));
@@ -322,7 +322,7 @@ impl LauncherApp {
         resp.clicked()
     }
 
-    /// The website: its own icon (the "H" in a rounded square with the dot), drawn in the colour of the text like the
+    /// The website: its own icon (the "H" in a rounded square with the dot), drawn in the color of the text like the
     /// other icons of the bar.
     fn web_button(&self, ui: &mut egui::Ui) -> bool {
         let p = self.p;
@@ -350,7 +350,7 @@ impl LauncherApp {
         self.launcher_bar(ui, st, acts);
         // only when the check failed (no internet, GitHub limits…)
         if let Some(e) = st.check_error.as_ref().filter(|_| !st.checking) {
-            info_bar(ui, &self.p, Tone::Caution, &format!("{} – {}", tr("Could not check for updates", "Aktualizace se nepodařilo zjistit"), short(e)), None);
+            info_bar(ui, &self.p, Tone::Caution, &format!("{} – {}", tr("Could not check for updates", "Aktualizace se nepodařilo zkontrolovat"), short(e)), None);
             ui.add_space(4.0);
         }
         ui.add_space(14.0);
@@ -433,7 +433,7 @@ impl LauncherApp {
                     ui.spacing_mut().item_spacing.y = 0.0;
                     ui.label(RichText::new(a.name).font(theme::semibold(16.0)).color(p.text));
                     let who = match (&installed, &portable) {
-                        (Some(i), _) if i.all_users => tr("Installed for all users", "Nainstalováno pro všechny"),
+                        (Some(i), _) if i.all_users => tr("Installed for all users", "Nainstalováno pro všechny uživatele"),
                         (Some(_), _) => tr("Installed", "Nainstalováno"),
                         (None, Some(_)) if a.kind == Kind::Files => tr("In VLC", "Ve VLC"),
                         (None, Some(_)) if a.kind == Kind::Extension => tr("Unpacked", "Rozbaleno"),
@@ -534,7 +534,7 @@ impl LauncherApp {
                         .iter()
                         .map(|k| crate::vlc::COLOURS.iter().find(|c| c.0 == *k).map(|c| tr(c.1, c.2)).unwrap_or(k))
                         .collect();
-                    let labels: Vec<String> = sizes.iter().map(|s| format!("{s} %")).collect();
+                    let labels: Vec<String> = sizes.iter().map(i18n::percent).collect();
                     let label_refs: Vec<&str> = labels.iter().map(String::as_str).collect();
                     let ci = colours.iter().position(|c| *c == now_c).unwrap_or(usize::MAX);
                     let si = sizes.iter().position(|s| *s == now_s).unwrap_or(usize::MAX);
@@ -547,13 +547,13 @@ impl LauncherApp {
                         acts.push(Action::VlcSkin(colour, sizes[i]));
                     }
                 } else if a.kind == Kind::Files {
-                    let tip = tr("Unpacks the skins into VLC and turns HeMi Dark on – then pick its colour and size here", "Rozbalí vzhledy do VLC a zapne HeMi Dark – barvu a velikost pak vybereš tady");
-                    if Btn::new(tr("Install to VLC", "Nainstalovat do VLC")).accent().enabled(release.is_some()).tip(tip).show(ui, &p).clicked() {
+                    let tip = tr("Unpacks the skins into VLC and turns HeMi Dark on – then pick its color and size here", "Rozbalí vzhledy do VLC a zapne HeMi Dark – barvu a velikost pak vybereš tady");
+                    if Btn::new(tr("Install into VLC", "Nainstalovat do VLC")).accent().enabled(release.is_some()).tip(tip).show(ui, &p).clicked() {
                         acts.push(Action::Install(a.id));
                     }
                 } else if a.kind == Kind::Tool {
                     let b = Btn::new(tr("Download", "Stáhnout")).accent().enabled(release.is_some());
-                    let tip = tr("The program into the Downloads folder – best copied to a USB stick", "Program do složky Stažené soubory – nejlépe zkopírovat na USB disk");
+                    let tip = tr("Saves the program to the Downloads folder – best copied to a USB drive", "Uloží program do složky Stažené soubory – nejlépe ho zkopíruj na USB disk");
                     if b.tip(tip).show(ui, &p).clicked() {
                         acts.push(Action::Install(a.id));
                     }
@@ -562,8 +562,8 @@ impl LauncherApp {
                         acts.push(Action::Install(a.id));
                     }
                     let tip = tr(
-                        "The portable version into the Downloads folder (or the folder from the settings)",
-                        "Portable verze do Stažených souborů (nebo do složky z nastavení)",
+                        "Saves the portable version to the Downloads folder (or the folder set in Settings)",
+                        "Uloží portable verzi do složky Stažené soubory (nebo do složky z Nastavení)",
                     );
                     if Btn::new("Portable").enabled(release.is_some()).tip(tip).show(ui, &p).clicked() {
                         acts.push(Action::InstallPortable(a.id));
@@ -575,7 +575,7 @@ impl LauncherApp {
                     }
                     if portable.is_some()
                         && Btn::new("").icon(glyph::DELETE).subtle().tip(match a.kind {
-                            Kind::Files => tr("Remove from VLC (its normal look back)", "Odebrat z VLC (vrátí jeho běžný vzhled)"),
+                            Kind::Files => tr("Remove from VLC (restores its normal look)", "Odebrat z VLC (vrátí jeho běžný vzhled)"),
                             Kind::Extension => tr("Remove the unpacked extension (remove it in the browser too)", "Odstranit rozbalené rozšíření (odeber ho i v prohlížeči)"),
                             _ => tr("Remove the portable version", "Odstranit portable verzi"),
                         })
@@ -662,7 +662,7 @@ impl LauncherApp {
         };
         ui.horizontal(|ui| {
             ui.label(RichText::new(format!("{} {}", tr("Version", "Verze"), r.version)).font(theme::semibold(14.0)).color(p.text));
-            ui.label(RichText::new(&r.date).size(13.0).color(p.text2));
+            ui.label(RichText::new(i18n::date(&r.date)).size(13.0).color(p.text2));
             ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
                 if Btn::new(tr("On GitHub", "Na GitHubu")).icon(glyph::GLOBE).show(ui, &p).clicked() {
                     acts.push(Action::Url(r.page.clone()));
@@ -717,14 +717,15 @@ impl LauncherApp {
                 });
             });
         }
-        ui.add_space(14.0);        section(ui, &p, tr("Updates", "Aktualizace"));
-        if row(ui, tr("Check for updates automatically", "Automaticky vyhledat aktualizace"), "", s.auto_check) {
+        ui.add_space(14.0);
+        section(ui, &p, tr("Updates", "Aktualizace"));
+        if row(ui, tr("Check for updates automatically", "Automaticky kontrolovat aktualizace"), "", s.auto_check) {
             acts.push(Action::Set(Settings { auto_check: !s.auto_check, ..s.clone() }));
         }
         if row(ui, tr("Install updates in the background", "Instalovat aktualizace na pozadí"), "", s.auto_install) {
             acts.push(Action::Set(Settings { auto_install: !s.auto_install, ..s.clone() }));
         }
-        if row(ui, tr("Notify about new versions", "Upozornit na nové verze"), "", s.notify) {
+        if row(ui, tr("Notify about new versions", "Upozorňovat na nové verze"), "", s.notify) {
             acts.push(Action::Set(Settings { notify: !s.notify, ..s.clone() }));
         }
         ui.add_space(14.0);
@@ -732,7 +733,7 @@ impl LauncherApp {
         if row(ui, tr("Start with Windows", "Spouštět s Windows"), "", self.autostart) {
             acts.push(Action::Autostart(!self.autostart));
         }
-        if row(ui, tr("Closing hides it in the notification area", "Zavřením se skryje do oznamovací oblasti"), "", s.tray_on_close) {
+        if row(ui, tr("Hide in the notification area when closed", "Zavřením okna se skryje do oznamovací oblasti"), "", s.tray_on_close) {
             acts.push(Action::Set(Settings { tray_on_close: !s.tray_on_close, ..s.clone() }));
         }
         ui.add_space(14.0);
@@ -781,7 +782,7 @@ impl LauncherApp {
             (tr("Project on GitHub", "Projekt na GitHubu"), PROJECT, Action::Url(PROJECT.into())),
             (tr("What's new", "Co je nového"), RELEASES, Action::Url(RELEASES.into())),
             (tr("Report a problem", "Nahlásit problém"), CONTACT, Action::Url(CONTACT.into())),
-            (tr("Licences", "Licence"), "", Action::Licences),
+            (tr("Licenses", "Licence"), "", Action::Licences),
         ];
         ui.add_space(10.0);
         section(ui, &p, tr("Links", "Odkazy"));
@@ -1007,7 +1008,7 @@ fn phase_ui(ui: &mut egui::Ui, p: &Palette, phase: &Phase) {
     match phase {
         Phase::Download(f) => {
             if *f >= 0.0 {
-                ui.label(RichText::new(format!("{:.0} %", f * 100.0)).size(13.0).color(p.text2));
+                ui.label(RichText::new(i18n::percent(format!("{:.0}", f * 100.0))).size(13.0).color(p.text2));
                 ui.add_space(4.0);
                 progress(ui, p, *f, 120.0);
             } else {
@@ -1034,7 +1035,7 @@ fn ago(t: SystemTime) -> String {
         60..3600 => format!("{} min", s / 60),
         _ => format!("{} h", s / 3600),
     };
-    if i18n::cz() { format!("Zkontrolováno před {amount}") } else { format!("Checked {amount} ago") }
+    tr("Checked {} ago", "Zkontrolováno před {}").replace("{}", &amount)
 }
 
 /// The first line of an error, not too long.

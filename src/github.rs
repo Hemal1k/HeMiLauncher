@@ -38,13 +38,13 @@ fn agent() -> &'static ureq::Agent {
 }
 
 /// The last answer of GitHub for a project: %LocalAppData%\HeMi\HeMiLauncher\cache\<project>.json, its ETag on the
-/// first line. GitHub allows 60 questions an hour without an account; "has it changed?" answered by 304 does not count.
+/// first line. GitHub allows 60 questions an hour without an account (a 304 "unchanged" answer counts too).
 fn cache_file(project: &str) -> std::path::PathBuf {
     std::env::var_os("LOCALAPPDATA").map(std::path::PathBuf::from).unwrap_or_default().join("HeMi").join("HeMiLauncher").join("cache").join(format!("{project}.json"))
 }
 
 /// The latest release of a project (not pre-releases). GitHub counts every question without an account – also "has it
-/// changed?" answered by 304 – so an answer younger than 30 minutes is used without asking (y_user, the Refresh
+/// changed?" answered by 304 – so an answer younger than 30 minutes is used without asking (by_user, the Refresh
 /// button: 1 minute).
 pub fn latest(project: &str, by_user: bool) -> Result<Release, String> {
     let tr = crate::i18n::tr;
@@ -83,7 +83,7 @@ pub fn latest(project: &str, by_user: bool) -> Result<Release, String> {
         // the limit of GitHub reached: the last known release is still good enough
         Err(ureq::Error::StatusCode(403 | 429)) => match cached {
             Some((_, b)) => b,
-            None => return Err(tr("GitHub limit reached – try again in an hour", "Dosažen limit GitHubu – zkus to znovu za hodinu").into()),
+            None => return Err(tr("GitHub limit reached – try again in an hour", "Byl dosažen limit GitHubu – zkus to znovu za hodinu").into()),
         },
         Err(ureq::Error::StatusCode(404)) => return Err(tr("No release yet", "Zatím žádné vydání").into()),
         Err(e) => match cached {
@@ -114,7 +114,7 @@ fn parse(text: &str) -> Result<Release, String> {
 /// Downloads `url` into `to` (through a temporary file); `progress` gets the share done (0–1, or -1 when the size is not
 /// known).
 pub fn download(url: &str, to: &Path, mut progress: impl FnMut(f32)) -> Result<(), String> {
-    let response = agent().get(url).call().map_err(|e| e.to_string())?;
+    let response = agent().get(url).call().map_err(|e| format!("{} ({e})", crate::i18n::tr("The download failed", "Stažení se nepovedlo")))?;
     let total = response.headers().get("content-length").and_then(|v| v.to_str().ok()).and_then(|v| v.parse::<u64>().ok());
     let mut body = response.into_body();
     let mut reader = body.as_reader();
@@ -126,7 +126,7 @@ pub fn download(url: &str, to: &Path, mut progress: impl FnMut(f32)) -> Result<(
     let mut buf = vec![0u8; 256 * 1024];
     let mut done = 0u64;
     loop {
-        let n = reader.read(&mut buf).map_err(|e| e.to_string())?;
+        let n = reader.read(&mut buf).map_err(|e| format!("{} ({e})", crate::i18n::tr("The download failed", "Stažení se nepovedlo")))?;
         if n == 0 {
             break;
         }
@@ -140,7 +140,8 @@ pub fn download(url: &str, to: &Path, mut progress: impl FnMut(f32)) -> Result<(
 
 /// A small text file of a release (SHA256SUMS.txt).
 pub fn text(url: &str) -> Result<String, String> {
-    agent().get(url).call().map_err(|e| e.to_string())?.body_mut().read_to_string().map_err(|e| e.to_string())
+    let failed = |e: ureq::Error| format!("{} ({e})", crate::i18n::tr("SHA256SUMS.txt could not be downloaded", "SHA256SUMS.txt nešlo stáhnout"));
+    agent().get(url).call().map_err(failed)?.body_mut().read_to_string().map_err(failed)
 }
 
 /// Checks a downloaded file against SHA256SUMS.txt of its release; a file that does not match is deleted.

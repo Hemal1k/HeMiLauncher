@@ -33,11 +33,11 @@ Windows 10 / 11, x64 and ARM64. Nothing else needs to be installed.
 - Under **Other**: **HeMiTube** (a browser extension for YouTube) is unpacked into `%AppData%\HeMi\HeMiTube`; **Add to browser**
   opens a short guide in the browser you pick (its extensions page and the folder to copy) – the browser loads it once
   (*Developer mode → Load unpacked*), later updates replace it in place (then ⟳ in the browser).
-- Under **Other** too: **HeMi Dark** goes straight into VLC: the skins into its skins folder, turned on in its settings; pick the colour and the
+- Under **Other** too: **HeMi Dark** goes straight into VLC: the skins into its skins folder, turned on in its settings; pick the color and the
   size in its card (VLC must be closed meanwhile). Removing it brings the normal look of VLC back.
 - **In the background**: after the start and every 4 hours it looks for new versions, shows a Windows notification, and can
   install them by itself (off by default). Closing the window hides it in the notification area; it can start with Windows.
-- **Checked downloads**: every installer and zip is compared with `SHA256SUMS.txt` of its release before it is run or unpacked.
+- **Checked downloads**: every installer, exe and zip is compared with `SHA256SUMS.txt` of its release before it is run or unpacked.
 - **Portable versions**: downloaded into the Downloads folder (or a folder chosen in the settings) – the launcher updates, opens and removes them there too.
 - **Updates itself** – the installed version with its installer, the portable one by replacing its exe.
 - **The other HeMi apps** find it (`HKCU\Software\HeMi\HeMiLauncher`): when it is there they leave their updates to it, and
@@ -58,14 +58,14 @@ The exe is `build\release\HeMiLauncher.exe` (`.cargo\config.toml` sets the build
 so it runs without the Visual C++ Redistributable).
 
 `release.ps1` builds the downloads into `build\dist` (needs [Inno Setup 6](https://jrsoftware.org/isinfo.php); ARM64 also
-the MSVC ARM64 build tools): the installer (`installer\HeMiLauncher.iss`) and the portable zips. A release published on GitHub
+the MSVC ARM64 build tools): the installer (`installer\HeMiLauncher.iss`) and the portable exes. A release published on GitHub
 runs the same script in `.github\workflows\release.yml` and gets the files attached.
 
 ## Project
 
 | File | Contents |
 |---|---|
-| `src\main.rs` | Start: one launcher per user, `--tray` (hidden), `--check`, `--autostart`. |
+| `src\main.rs` | Start: one launcher per user, `--tray` (hidden), `--check`, `--autostart`, `--show` (a click on its notification); for the installer `--repair` and `--set-autostart`. |
 | `src\app.rs` | The window: the apps, what's new, settings, About. |
 | `src\catalog.rs` | The HeMi apps and what of them is installed (their uninstall entries). |
 | `src\github.rs` | The latest releases on GitHub and downloading. |

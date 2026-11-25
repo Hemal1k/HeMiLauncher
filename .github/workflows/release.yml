@@ -39,7 +39,7 @@ jobs:
           rustup default 1.99.1
 
       - name: Inno Setup
-        run: choco install innosetup --version=6.7.3 --no-progress -y
+        run: choco install innosetup --version=6.7.1 --no-progress -y
 
       # the unit tests (the ones that change the PC are #[ignore]) and clippy before anything is built for the release
       - name: Tests

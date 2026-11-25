@@ -30,21 +30,28 @@ Windows 10 / 11, x64 and ARM64. Nothing else needs to be installed.
 - **Installing** runs the installer of the app with its pages (just for you or for all users, a desktop shortcut…).
   **Updating** runs it quietly – for apps installed for all users Windows asks for administrator rights.
 - **Update all** at once; HeMiMizer (one program, run after reinstalling Windows) is downloaded into the Downloads folder.
-- Under **Other**: **HeMiTube** (a browser extension for YouTube) is unpacked into `%AppData%\HeMi\HeMiTube`; **Add to browser**
+- **HeMiTube** (a browser extension for YouTube) is unpacked into `%AppData%\HeMi\HeMiTube`; **Add to browser**
   opens a short guide in the browser you pick (its extensions page and the folder to copy) – the browser loads it once
   (*Developer mode → Load unpacked*), later updates replace it in place (then ⟳ in the browser).
-- Under **Other** too: **HeMi Dark** goes straight into VLC: the skins into its skins folder, turned on in its settings; pick the color and the
-  size in its card (VLC must be closed meanwhile). Removing it brings the normal look of VLC back.
+- **HeMi Dark** goes straight into VLC: the skins into its skins folder, turned on in its settings; pick the color and the
+  size in its card (VLC must be closed meanwhile). Removing it brings back the interface VLC had before.
 - **In the background**: after the start and every 4 hours it looks for new versions, shows a Windows notification, and can
-  install them by itself (off by default). Closing the window hides it in the notification area; it can start with Windows.
-- **Checked downloads**: every installer, exe and zip is compared with `SHA256SUMS.txt` of its release before it is run or unpacked.
+  install them by itself (off by default – an app installed for all users is only announced, since its update asks for
+  administrator rights). Closing the window hides it in the notification area; it can start with Windows.
+- **Checked downloads**: every installer, exe and zip is compared with `SHA256SUMS.txt` of its release while it downloads,
+  and kept locked against changes until it is run or unpacked; a download that does not match never replaces a file.
 - **Portable versions**: downloaded into the Downloads folder (or a folder chosen in the settings) – the launcher updates, opens and removes them there too.
+  A folder of the same name it did not make is never replaced.
 - **Updates itself** – the installed version with its installer, the portable one by replacing its exe.
 - **The other HeMi apps** find it (`HKCU\Software\HeMi\HeMiLauncher`): when it is there they leave their updates to it, and
   HeMiDock shows its updates in the status bar.
 
 It reads the releases on GitHub (`api.github.com`, the TLS of Windows) – nothing else, no accounts, no telemetry. Its settings
 are in `%AppData%\HeMi\HeMiLauncher\settings.ini`.
+
+Uninstalling removes the launcher, its start with Windows and its notifications, and asks whether to delete its settings.
+What it installed stays: remove the apps and their portable versions, HeMiTube (`%AppData%\HeMi\HeMiTube`) and HeMi Dark
+(`%AppData%\vlc\skins\HeMiDark`, the copy of VLC's settings `vlcrc.before-hemidark`) in their cards first if you want them gone.
 
 ## Building
 

@@ -13,7 +13,8 @@ pub struct Browser {
     pub scheme: &'static str,
 }
 
-/// The browsers found: App Paths of Windows (for the user, then for all), else their usual folders.
+/// The browsers found: App Paths of Windows (for all users first – only administrators write there –, then for the
+/// user), else their usual folders.
 pub fn found() -> Vec<Browser> {
     let local = std::env::var_os("LOCALAPPDATA").map(PathBuf::from).unwrap_or_default();
     let pf = std::env::var_os("ProgramFiles").map(PathBuf::from).unwrap_or_else(|| PathBuf::from(r"C:\Program Files"));
@@ -28,7 +29,7 @@ pub fn found() -> Vec<Browser> {
     let mut out = Vec::new();
     for (name, scheme, exe, paths) in known {
         let key = format!(r"SOFTWARE\Microsoft\Windows\CurrentVersion\App Paths\{exe}");
-        let registered = [false, true].into_iter().filter_map(|m| crate::reg::read(m, &key, "")).map(|p| PathBuf::from(p.trim_matches('"'))).find(|p| p.exists());
+        let registered = [true, false].into_iter().filter_map(|m| crate::reg::read(m, &key, "")).map(|p| PathBuf::from(p.trim_matches('"'))).find(|p| p.exists());
         if let Some(exe) = registered.or_else(|| paths.into_iter().find(|p| p.exists())) {
             out.push(Browser { name, exe, scheme });
         }

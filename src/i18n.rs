@@ -27,6 +27,7 @@ pub fn cz() -> bool {
                 _ => {}
             }
         }
+        // SAFETY: no arguments, it only returns a number.
         (unsafe { GetUserDefaultUILanguage() } & 0x3FF) == 0x05
     })
 }

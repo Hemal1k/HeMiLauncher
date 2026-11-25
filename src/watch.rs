@@ -73,7 +73,7 @@ impl Ctx {
             st.releases.iter().map(|(id, r)| (*id, Ok(r.clone()))).collect()
         };
         let dir = self.settings.lock().unwrap().portable();
-        let ups = jobs::updates(&releases, dir.as_deref());
+        let ups = jobs::updates(&releases, &dir);
         crate::notify::write_updates(&ups);
         crate::tray::set_tip(&tip(ups.len()));
         ups
@@ -121,26 +121,28 @@ impl Ctx {
             new
         };
         if s.auto_install {
+            // installed for all users: its update asks for administrator rights – never a question of Windows out of
+            // nowhere; told about instead, installed by a click in the window
+            let for_all = |id: &str| jobs::find(id).and_then(catalog::installed).is_some_and(|i| i.all_users);
             // the apps first, the launcher last (it ends then)
-            for (id, _) in ups.iter().filter(|(id, _)| *id != LAUNCHER.id) {
+            for (id, _) in ups.iter().filter(|(id, _)| *id != LAUNCHER.id && !for_all(id)) {
                 // installed by its installer: quietly with it; else the portable version
                 match jobs::find(id) {
                     Some(app) if catalog::installed(app).is_none() => self.install_portable(id, true),
                     _ => self.install(id, true),
                 }
             }
-            if ups.iter().any(|(id, _)| *id == LAUNCHER.id) {
+            let ask: Vec<_> = new.iter().filter(|(id, _)| for_all(id)).cloned().collect();
+            if s.notify && !ask.is_empty() {
+                let (title, names) = new_versions(&ask);
+                crate::notify::toast(&title, &format!("{names} – {}", tr("open HeMi Launcher to install (needs administrator rights)", "nainstaluješ v HeMi Launcheru (potřebuje práva správce)")));
+            }
+            if ups.iter().any(|(id, _)| *id == LAUNCHER.id && !for_all(id)) {
                 self.update_self(false);
             }
         } else if s.notify && !new.is_empty() {
-            let names: Vec<&str> = new.iter().filter_map(|(id, _)| jobs::find(id)).map(|a| a.name).collect();
-            let n = new.len();
-            let title = if n == 1 {
-                tr("A new version", "Nová verze").to_string()
-            } else {
-                format!("{n} {}", plural(n, "", tr("new versions", "nové verze"), tr("new versions", "nových verzí")))
-            };
-            crate::notify::toast(&title, &names.join(", "));
+            let (title, names) = new_versions(&new);
+            crate::notify::toast(&title, &names);
         }
     }
 
@@ -177,18 +179,15 @@ impl Ctx {
         };
         let dir = self.settings.lock().unwrap().portable();
         let before = catalog::installed(app);
-        let had = dir.as_deref().and_then(|d| catalog::portable(app, d));
+        let had = catalog::portable(app, &dir);
         let result = match app.kind {
-            catalog::Kind::App if portable => match &dir {
-                Some(d) => jobs::install_portable(app, &release, d, progress).map(|()| {
-                    if had.is_some() {
-                        format!("{} {} {} {}", app.name, tr("updated to", "aktualizován na"), release.version, tr("(portable)", "(portable verze)"))
-                    } else {
-                        format!("{} – {} {}", app.name, tr("portable version in", "portable verze v"), d.join(app.id).display())
-                    }
-                }),
-                None => Err(tr("Choose a folder for portable versions in the settings.", "V nastavení vyber složku pro portable verze.").into()),
-            },
+            catalog::Kind::App if portable => jobs::install_portable(app, &release, &dir, progress).map(|()| {
+                if had.is_some() {
+                    format!("{} {} {} {}", app.name, tr("updated to", "aktualizován na"), release.version, tr("(portable)", "(portable verze)"))
+                } else {
+                    format!("{} – {} {}", app.name, tr("portable version in", "portable verze v"), dir.join(app.id).display())
+                }
+            }),
             catalog::Kind::App => jobs::install(app, &release, before.as_ref(), progress).map(|()| {
                 if before.is_some() {
                     format!("{} {} {}", app.name, tr("updated to", "aktualizován na"), release.version)
@@ -198,17 +197,17 @@ impl Ctx {
             }),
             // the extension into its own folder in %AppData%\HeMi (not the folder of the portable versions): the
             // browser loads it once (Load unpacked) and reloads it after an update
-            catalog::Kind::Extension => match Some(catalog::extension_base()) {
-                Some(d) => jobs::install_portable(app, &release, &d, progress).map(|()| {
+            catalog::Kind::Extension => {
+                let d = catalog::extension_base();
+                jobs::install_portable(app, &release, &d, progress).map(|()| {
                     let folder = d.join(app.id);
                     if had.is_some() {
                         format!("{} {} {} – {}", app.name, tr("updated to", "aktualizován na"), release.version, tr("reload it in the browser (Extensions → ⟳)", "v prohlížeči ho obnov (Rozšíření → ⟳)"))
                     } else {
                         format!("{} – {} {} – {}", app.name, tr("unpacked in", "rozbalen v"), folder.display(), tr("now click Add to browser", "teď klikni na Přidat do prohlížeče"))
                     }
-                }),
-                None => Err(tr("Choose a folder for portable versions in the settings.", "V nastavení vyber složku pro portable verze.").into()),
-            },
+                })
+            }
             catalog::Kind::Tool => jobs::download_tool(app, &release, progress).map(|f| format!("{} – {}", app.name, f.display())),
             catalog::Kind::Files => jobs::install_vlc_skins(app, &release, progress),
         };
@@ -243,8 +242,7 @@ impl Ctx {
             self.repaint();
             return;
         }
-        let dir = if app.kind == catalog::Kind::Extension { Some(catalog::extension_base()) } else { self.settings.lock().unwrap().portable() };
-        let Some(dir) = dir else { return };
+        let dir = if app.kind == catalog::Kind::Extension { catalog::extension_base() } else { self.settings.lock().unwrap().portable() };
         if let Err(e) = jobs::remove_portable(app, &dir) {
             self.message(format!("{}: {e}", app.name), false);
         }
@@ -300,6 +298,18 @@ impl Ctx {
         let c = self.clone();
         std::thread::spawn(move || f(&c));
     }
+}
+
+/// A notification of new versions: its title ("A new version" / "3 new versions") and the names of the apps.
+fn new_versions(ups: &[(&'static str, String)]) -> (String, String) {
+    let names: Vec<&str> = ups.iter().filter_map(|(id, _)| jobs::find(id)).map(|a| a.name).collect();
+    let n = ups.len();
+    let title = if n == 1 {
+        tr("A new version", "Nová verze").to_string()
+    } else {
+        format!("{n} {}", plural(n, "", tr("new versions", "nové verze"), tr("new versions", "nových verzí")))
+    };
+    (title, names.join(", "))
 }
 
 /// The text of the icon in the notification area.

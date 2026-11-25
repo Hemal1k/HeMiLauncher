@@ -64,8 +64,9 @@ fn main() -> eframe::Result {
         viewport: egui::ViewportBuilder::default()
             .with_title("HeMi Launcher")
             .with_app_id("HeMiLauncher")
-            // three cards side by side and the two rows of them without scrolling
-            .with_inner_size([1010.0, 600.0])
+            // everything at once (the user, 2026-11-24): three cards side by side, wide enough for all their buttons, and
+            // all three rows of them (3 × 3) without scrolling
+            .with_inner_size([1180.0, 800.0])
             .with_min_inner_size([640.0, 480.0])
             .with_icon(icon)
             .with_visible(!hidden)

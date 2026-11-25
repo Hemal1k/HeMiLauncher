@@ -40,6 +40,7 @@ pub fn toast(title: &str, text: &str) -> bool {
         esc(text)
     );
     (|| -> windows::core::Result<()> {
+        // SAFETY: WinRT for this thread; "already initialized" (also in another mode) is fine, so the result is not needed.
         unsafe {
             let _ = RoInitialize(RO_INIT_MULTITHREADED);
         }

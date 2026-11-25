@@ -34,8 +34,8 @@ fn file() -> PathBuf {
 
 impl Settings {
     /// Where the portable versions go: the folder chosen in the settings, else the Downloads folder.
-    pub fn portable(&self) -> Option<PathBuf> {
-        if self.portable_dir.trim().is_empty() { Some(downloads()) } else { Some(PathBuf::from(self.portable_dir.trim())) }
+    pub fn portable(&self) -> PathBuf {
+        if self.portable_dir.trim().is_empty() { downloads() } else { PathBuf::from(self.portable_dir.trim()) }
     }
 
     pub fn load() -> Settings {
@@ -59,7 +59,8 @@ impl Settings {
         if let Some(v) = install {
             self.auto_install = v.trim() == "1";
         }
-        self.save();
+        // at the start, without a window yet: not saved, the choice is still used now (and saved with the next change)
+        let _ = self.save();
         reg::delete_user(KEY, "SetupAutoCheck");
         reg::delete_user(KEY, "SetupAutoInstall");
     }
@@ -82,7 +83,8 @@ impl Settings {
         s
     }
 
-    pub fn save(&self) {
+    /// Writes the settings; the error is for the window to show.
+    pub fn save(&self) -> Result<(), String> {
         let b = |v: bool| if v { "1" } else { "0" };
         let text = format!(
             "AutoCheck={}\nAutoInstall={}\nNotify={}\nTrayOnClose={}\nPortableDir={}\n",
@@ -92,8 +94,9 @@ impl Settings {
             b(self.tray_on_close),
             self.portable_dir
         );
-        let _ = std::fs::create_dir_all(data_dir());
-        let _ = std::fs::write(file(), text);
+        let failed = |e: std::io::Error| format!("{} ({e})", crate::i18n::tr("The settings could not be saved", "Nastavení nešlo uložit"));
+        std::fs::create_dir_all(data_dir()).map_err(failed)?;
+        std::fs::write(file(), text).map_err(failed)
     }
 }
 
@@ -108,15 +111,18 @@ pub fn autostart() -> bool {
 
 /// The start with Windows is two things: the Run value (it shows in Task Manager → Startup apps, where it can be switched
 /// off) and a task at sign-in – Windows starts the Run values only some time after the sign-in, the task at once.
-pub fn set_autostart(on: bool) {
+/// False when switching it on did not fully work (the Run value or the task could not be written).
+pub fn set_autostart(on: bool) -> bool {
     match (on, std::env::current_exe()) {
         (true, Ok(exe)) => {
-            reg::write_user(RUN, VALUE, &format!("\"{}\" {TRAY}", exe.display()));
-            register_task(&exe);
+            let run = reg::write_user(RUN, VALUE, &format!("\"{}\" {TRAY}", exe.display()));
+            register_task(&exe) && run
         }
+        (true, Err(_)) => false,
         _ => {
             reg::delete_user(RUN, VALUE);
             delete_task();
+            true
         }
     }
 }
@@ -140,8 +146,8 @@ fn schtasks(args: &[&str]) -> Option<String> {
 }
 
 /// The task: at the sign-in of this user, as this user without raised rights, normal priority, also on battery,
-/// never ended after a time.
-fn register_task(exe: &std::path::Path) {
+/// never ended after a time. False when schtasks did not make it.
+fn register_task(exe: &std::path::Path) -> bool {
     let esc = |s: &str| s.replace('&', "&amp;").replace('<', "&lt;").replace('>', "&gt;").replace('"', "&quot;");
     let user = format!("{}\\{}", std::env::var("USERDOMAIN").unwrap_or_default(), std::env::var("USERNAME").unwrap_or_default());
     let exe_s = exe.display().to_string();
@@ -170,16 +176,20 @@ fn register_task(exe: &std::path::Path) {
     let mut bytes = vec![0xFF, 0xFE];
     bytes.extend(xml.encode_utf16().flat_map(|c| c.to_le_bytes()));
     let file = std::env::temp_dir().join("hemilauncher-task.xml");
-    if std::fs::write(&file, bytes).is_ok() {
-        let name = task_name();
-        schtasks(&["/Create", "/TN", &name, "/XML", &file.display().to_string(), "/F"]);
-        let _ = std::fs::remove_file(&file);
+    if std::fs::write(&file, bytes).is_err() {
+        return false;
     }
+    let name = task_name();
+    let made = schtasks(&["/Create", "/TN", &name, "/XML", &file.display().to_string(), "/F"]).is_some();
+    // cleaning up: the temporary file of the task
+    let _ = std::fs::remove_file(&file);
+    made
 }
 
 fn delete_task() {
     let name = task_name();
-    schtasks(&["/Delete", "/TN", &name, "/F"]);
+    // fails also when there is no task (nothing to tell)
+    let _ = schtasks(&["/Delete", "/TN", &name, "/F"]);
 }
 
 /// The task there and pointing to this exe (asked by schtasks – only on the thread of the start, never on the window's).
@@ -205,8 +215,9 @@ pub fn fix_autostart() {
         if reg::read(false, RUN, VALUE).is_none_or(|v| !v.to_lowercase().contains(&exe.display().to_string().to_lowercase())) {
             reg::write_user(RUN, VALUE, &format!("\"{}\" {TRAY}", exe.display()));
         }
+        // in the background, nobody to tell: tried again at the next start
         if !task_ok(&exe) {
-            register_task(&exe);
+            let _ = register_task(&exe);
         }
     }
 }
@@ -222,6 +233,8 @@ pub fn register() {
 pub fn downloads() -> PathBuf {
     use windows_sys::Win32::System::Com::CoTaskMemFree;
     use windows_sys::Win32::UI::Shell::{FOLDERID_Downloads, SHGetKnownFolderPath};
+    // SAFETY: SHGetKnownFolderPath writes a NUL-ended string it allocated into `p` (only read when it succeeded and `p`
+    // is not null); it is read up to its NUL, copied, and freed once with CoTaskMemFree as the API wants.
     unsafe {
         let mut p: windows_sys::core::PWSTR = std::ptr::null_mut();
         if SHGetKnownFolderPath(&FOLDERID_Downloads, 0, std::ptr::null_mut(), &mut p) == 0 && !p.is_null() {

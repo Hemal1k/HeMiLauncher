@@ -19,15 +19,15 @@ pub fn check(by_user: bool) -> Releases {
 }
 
 /// The version of an app on this PC: installed, else portable (in `portable_dir`).
-pub fn current(app: &AppInfo, portable_dir: Option<&Path>) -> Option<String> {
+pub fn current(app: &AppInfo, portable_dir: &Path) -> Option<String> {
     if app.id == LAUNCHER.id {
         return Some(env!("CARGO_PKG_VERSION").to_string());
     }
-    catalog::installed(app).map(|i| i.version).or_else(|| portable_dir.and_then(|d| catalog::portable(app, d)).map(|p| p.version))
+    catalog::installed(app).map(|i| i.version).or_else(|| catalog::portable(app, portable_dir).map(|p| p.version))
 }
 
 /// The apps on this PC that have a newer version (the launcher too).
-pub fn updates(releases: &Releases, portable_dir: Option<&Path>) -> Vec<(&'static str, String)> {
+pub fn updates(releases: &Releases, portable_dir: &Path) -> Vec<(&'static str, String)> {
     let mut out = Vec::new();
     for (id, r) in releases {
         let Ok(r) = r else { continue };
@@ -119,34 +119,62 @@ mod unzip_tests {
     }
 }
 
-/// Downloads a file of the release into `to` and checks it.
-fn fetch(release: &Release, name: &str, to: &Path, progress: impl FnMut(f32)) -> Result<(), String> {
+/// Downloads a file of the release into `to`, checked against SHA256SUMS.txt of the release (read first). The open file
+/// returned keeps it unchanged until it is dropped – keep it while the file is used.
+fn fetch(release: &Release, name: &str, to: &Path, progress: impl FnMut(f32)) -> Result<std::fs::File, String> {
     let url = release.asset(name).ok_or_else(|| format!("{name}: {}", crate::i18n::tr("not in the release", "ve vydání chybí")))?.to_string();
-    github::download(&url, to, progress)?;
-    github::verify(release, to, name)
+    let want = github::checksum(release, name)?;
+    github::download(&url, to, name, &want, progress)
+}
+
+/// What an exit code of an Inno Setup installer means (0 is done). `new`: a new installation (with its pages).
+fn installer_result(code: Option<i32>, new: bool) -> Result<(), String> {
+    let tr = crate::i18n::tr;
+    match code {
+        Some(0) => Ok(()),
+        // 1: closed at its first question (just for me / all users) – 1 is also "Setup failed to initialize", which a
+        // new installation shows itself; 2: cancelled in the wizard, 5: cancelled while installing
+        Some(1) if new => Err(CANCELLED.into()),
+        Some(2) | Some(5) => Err(CANCELLED.into()),
+        Some(8) => Err(tr("The installer needs Windows to restart first – restart and try again.", "Instalátor potřebuje nejdřív restartovat Windows – restartuj a zkus to znovu.").into()),
+        Some(7) => Err(tr("The installer could not prepare the installation (is the app still running?).", "Instalátor nemohl připravit instalaci (neběží ještě aplikace?).").into()),
+        c => Err(format!("{} {}", tr("The installer ended with code", "Instalátor skončil s kódem"), c.unwrap_or(-1))),
+    }
+}
+
+#[cfg(test)]
+mod installer_tests {
+    use super::*;
+
+    #[test]
+    fn reads_the_exit_codes() {
+        assert!(installer_result(Some(0), false).is_ok());
+        assert_eq!(installer_result(Some(1), true).unwrap_err(), CANCELLED);
+        assert_ne!(installer_result(Some(1), false).unwrap_err(), CANCELLED);
+        assert_eq!(installer_result(Some(2), false).unwrap_err(), CANCELLED);
+        assert_eq!(installer_result(Some(5), true).unwrap_err(), CANCELLED);
+        assert_ne!(installer_result(Some(8), true).unwrap_err(), CANCELLED);
+        assert!(installer_result(None, true).is_err());
+    }
 }
 
 /// Downloads the installer of the app and runs it: with its pages (a new installation), or quietly (an update).
 pub fn install(app: &AppInfo, release: &Release, installed: Option<&Installed>, progress: impl FnMut(f32)) -> Result<(), String> {
     let name = format!("{}-Setup.exe", app.id);
     let file = temp().join(&name);
-    fetch(release, &name, &file, progress)?;
+    let lock = fetch(release, &name, &file, progress)?;
     let mut cmd = Command::new(&file);
     // the launcher keeps the app up to date: its installer does not ask about updates (HeMiDock); others ignore it
     cmd.arg("/LAUNCHER");
     if let Some(i) = installed {
         cmd.args(["/VERYSILENT", "/SUPPRESSMSGBOXES", "/NORESTART", "/UPDATE", if i.all_users { "/ALLUSERS" } else { "/CURRENTUSER" }]);
     }
-    let status = cmd.status().map_err(|e| format!("{} ({e})", crate::i18n::tr("The installer could not be started", "Instalátor nešlo spustit")))?;
+    let status = cmd.status().map_err(|e| format!("{} ({e})", crate::i18n::tr("The installer could not be started", "Instalátor nešlo spustit")));
+    drop(lock);
+    // cleaning up: the downloaded installer (downloaded again next time)
     let _ = std::fs::remove_file(&file);
     // 0 done; the rest cancelled by the user (or administrator rights refused), or failed
-    match status.code() {
-        Some(0) => Ok(()),
-        // 1: closed at its first question (just for me / all users), 2: cancelled in the wizard, 5: cancelled while installing
-        Some(1) | Some(2) | Some(5) if installed.is_none() => Err(CANCELLED.into()),
-        Some(2) | Some(5) => Err(CANCELLED.into()),
-        c => Err(format!("{} {}", crate::i18n::tr("The installer ended with code", "Instalátor skončil s kódem"), c.unwrap_or(-1))),
-    }
+    installer_result(status?.code(), installed.is_none())
 }
 
 /// The portable version of this PC's architecture (the x64 one when the release has no ARM64 one): the exe itself when the
@@ -178,15 +206,26 @@ fn unpack_portable(app: &AppInfo, file: &Path, into: &Path) -> bool {
 /// running); the version goes to a small file in the folder.
 pub fn install_portable(app: &AppInfo, release: &Release, dir: &Path, progress: impl FnMut(f32)) -> Result<(), String> {
     let tr = crate::i18n::tr;
-    let name = portable_asset(app, release);
-    let zip = temp().join(&name);
-    fetch(release, &name, &zip, progress)?;
     let target = dir.join(app.id);
     let new = dir.join(format!("{}.new", app.id));
     let old = dir.join(format!("{}.old", app.id));
+    // a folder of that name the launcher did not make (no version file – e.g. unpacked by hand) is never replaced
+    if let Some(f) = [&target, &new, &old].into_iter().find(|f| f.exists() && !f.join(catalog::PORTABLE_VERSION).exists()) {
+        return Err(format!(
+            "{}: {}",
+            f.display(),
+            tr("the folder already exists and was not made by HeMi Launcher – move or rename it first", "složka už existuje a nevytvořil ji HeMi Launcher – nejdřív ji přesuň nebo přejmenuj")
+        ));
+    }
+    let name = portable_asset(app, release);
+    let zip = temp().join(&name);
+    let lock = fetch(release, &name, &zip, progress)?;
+    // cleaning up: a .new left by an earlier try (it has the version file, checked above)
     let _ = std::fs::remove_dir_all(&new);
     std::fs::create_dir_all(&new).map_err(|e| format!("{}: {e}", new.display()))?;
     let ok = unpack_portable(app, &zip, &new);
+    drop(lock);
+    // cleaning up: the download
     let _ = std::fs::remove_file(&zip);
     // the exe right inside the zip, or (older zips) in one folder inside it
     let root = if new.join(app.exe).exists() {
@@ -231,8 +270,10 @@ pub fn install_vlc_skins(app: &AppInfo, release: &Release, progress: impl FnMut(
     let tr = crate::i18n::tr;
     let name = format!("{}-Skins.zip", app.id);
     let zip = temp().join(&name);
-    fetch(release, &name, &zip, progress)?;
+    let lock = fetch(release, &name, &zip, progress)?;
     let r = crate::vlc::unpack(&zip, &release.version);
+    drop(lock);
+    // cleaning up: the download
     let _ = std::fs::remove_file(&zip);
     r?;
     let (colours, sizes) = crate::vlc::choices();
@@ -247,17 +288,6 @@ pub fn install_vlc_skins(app: &AppInfo, release: &Release, progress: impl FnMut(
     })
 }
 
-/// HeMi Dark: the skins zip into the Downloads folder, shown in File Explorer.
-#[allow(dead_code)]
-pub fn download_files(app: &AppInfo, release: &Release, progress: impl FnMut(f32)) -> Result<PathBuf, String> {
-    let name = format!("{}-Skins.zip", app.id);
-    let downloads = crate::settings::downloads();
-    let file = downloads.join(&name);
-    fetch(release, &name, &file, progress)?;
-    let _ = Command::new("explorer.exe").arg(format!("/select,{}", file.display())).spawn();
-    Ok(file)
-}
-
 /// A program without an installer (HeMiMizer): the exe for this processor into the Downloads folder.
 pub fn download_tool(app: &AppInfo, release: &Release, progress: impl FnMut(f32)) -> Result<PathBuf, String> {
     // the ARM64 exe when the release has one (HeMiMizer is x64 only – Windows on ARM runs it emulated)
@@ -265,21 +295,59 @@ pub fn download_tool(app: &AppInfo, release: &Release, progress: impl FnMut(f32)
     let asset = if std::env::consts::ARCH == "aarch64" && release.asset(&arm).is_some() { arm } else { format!("{}.exe", app.id) };
     let file = crate::settings::downloads().join(format!("{}.exe", app.id));
     fetch(release, &asset, &file, progress)?;
+    // only a help: the message names the file too
     let _ = Command::new("explorer.exe").arg(format!("/select,{}", file.display())).spawn();
     Ok(file)
 }
 
-/// The uninstaller of the app (with its question).
-pub fn uninstall(i: &Installed) -> Result<(), String> {
-    let exe = i.uninstall.trim().trim_matches('"').to_string();
-    if exe.is_empty() {
-        return Err(crate::i18n::tr("No uninstaller found.", "Odinstalátor nebyl nalezen.").into());
-    }
-    Command::new(exe).status().map(|_| ()).map_err(|e| format!("{} ({e})", crate::i18n::tr("The uninstaller could not be started", "Odinstalátor nešlo spustit")))
+/// The program and its arguments of an UninstallString: `"C:\…\unins000.exe" /SILENT` or a path without quotes.
+fn split_command(s: &str) -> (String, Vec<String>) {
+    let s = s.trim();
+    let (exe, rest) = match s.strip_prefix('"').and_then(|r| r.split_once('"')) {
+        Some((exe, rest)) => (exe, rest),
+        // without quotes: the path up to ".exe", the rest arguments (a path may have spaces)
+        None => match s.to_ascii_lowercase().find(".exe") {
+            Some(i) => s.split_at(i + 4),
+            None => (s, ""),
+        },
+    };
+    (exe.trim().to_string(), rest.split_whitespace().map(String::from).collect())
 }
 
-pub fn open(exe: &Path) {
-    let _ = Command::new(exe).current_dir(exe.parent().unwrap_or(Path::new("."))).spawn();
+#[cfg(test)]
+mod uninstall_tests {
+    #[test]
+    fn splits_the_uninstall_string() {
+        let (e, a) = super::split_command(r#""C:\Program Files\HeMi\HeMiPad\unins000.exe" /SILENT"#);
+        assert_eq!(e, r"C:\Program Files\HeMi\HeMiPad\unins000.exe");
+        assert_eq!(a, vec!["/SILENT"]);
+        let (e, a) = super::split_command(r"C:\Program Files\HeMi\unins000.exe");
+        assert_eq!(e, r"C:\Program Files\HeMi\unins000.exe");
+        assert!(a.is_empty());
+    }
+}
+
+/// The uninstaller of the app (with its question).
+pub fn uninstall(i: &Installed) -> Result<(), String> {
+    let tr = crate::i18n::tr;
+    let (exe, args) = split_command(&i.uninstall);
+    if exe.is_empty() {
+        return Err(tr("No uninstaller found.", "Odinstalátor nebyl nalezen.").into());
+    }
+    let status = Command::new(exe).args(args).status().map_err(|e| format!("{} ({e})", tr("The uninstaller could not be started", "Odinstalátor nešlo spustit")))?;
+    // 0 done, 2 the user said no / cancelled (nothing to tell); anything else failed
+    match status.code() {
+        Some(0) | Some(2) => Ok(()),
+        c => Err(format!("{} {}", tr("The uninstaller ended with code", "Odinstalátor skončil s kódem"), c.unwrap_or(-1))),
+    }
+}
+
+pub fn open(exe: &Path) -> Result<(), String> {
+    Command::new(exe)
+        .current_dir(exe.parent().unwrap_or(Path::new(".")))
+        .spawn()
+        .map(|_| ())
+        .map_err(|e| format!("{}: {} ({e})", exe.display(), crate::i18n::tr("could not be started", "nešlo spustit")))
 }
 
 /// The launcher updates itself: installed – its installer quietly (it starts the launcher again); portable – the new
@@ -292,7 +360,8 @@ pub fn update_self(release: &Release, show: bool, progress: impl FnMut(f32)) -> 
         Some(i) => {
             let name = "HeMiLauncher-Setup.exe";
             let file = temp().join(name);
-            fetch(release, name, &file, progress)?;
+            // kept unchanged until the installer runs (the process ends right after)
+            let _lock = fetch(release, name, &file, progress)?;
             Command::new(&file)
                 .args(["/VERYSILENT", "/SUPPRESSMSGBOXES", "/NORESTART", "/UPDATE", if i.all_users { "/ALLUSERS" } else { "/CURRENTUSER" }])
                 // the installer starts the new launcher with its window, not hidden in the tray
@@ -304,11 +373,13 @@ pub fn update_self(release: &Release, show: bool, progress: impl FnMut(f32)) -> 
         None => {
             let name = portable_asset(&LAUNCHER, release);
             let zip = temp().join(&name);
-            fetch(release, &name, &zip, progress)?;
+            let lock = fetch(release, &name, &zip, progress)?;
             let out = temp().join("portable");
+            // cleaning up: what an earlier try left
             let _ = std::fs::remove_dir_all(&out);
             std::fs::create_dir_all(&out).map_err(|e| e.to_string())?;
             let ok = unpack_portable(&LAUNCHER, &zip, &out);
+            drop(lock);
             let new = out.join("HeMiLauncher.exe");
             if !ok || !new.exists() {
                 return Err(crate::i18n::tr("The new version could not be unpacked.", "Novou verzi nešlo rozbalit.").into());

@@ -81,6 +81,8 @@ pub fn size_for_screen(sizes: &[u32]) -> u32 {
 fn vlc_running() -> bool {
     use windows_sys::Win32::Foundation::{CloseHandle, INVALID_HANDLE_VALUE};
     use windows_sys::Win32::System::Diagnostics::ToolHelp::{CreateToolhelp32Snapshot, PROCESSENTRY32W, Process32FirstW, Process32NextW, TH32CS_SNAPPROCESS};
+    // SAFETY: the snapshot is checked, used only here and closed once; PROCESSENTRY32W is plain data (zeroed is valid)
+    // with its dwSize set as the API wants; szExeFile is read only up to its NUL inside the array.
     unsafe {
         let snap = CreateToolhelp32Snapshot(TH32CS_SNAPPROCESS, 0);
         if snap == INVALID_HANDLE_VALUE {
@@ -147,42 +149,88 @@ pub fn apply(colour: &str, size: u32) -> Result<(), String> {
     if vlc_running() {
         return Err(tr("Close VLC first – it writes its settings when it ends.", "Nejdřív zavři VLC – při ukončení přepíše své nastavení.").into());
     }
+    // the interface VLC had before HeMi Dark (none written = its default), given back by `remove`
+    let before = std::fs::read(vlcrc()).ok().and_then(|b| String::from_utf8(b).ok()).and_then(|t| value(&t, "core", "intf"));
+    if !before.as_deref().is_some_and(|v| v.starts_with("skins")) {
+        let f = intf_file();
+        std::fs::create_dir_all(f.parent().unwrap_or(&f)).map_err(|e| e.to_string())?;
+        std::fs::write(&f, before.unwrap_or_default()).map_err(|e| e.to_string())?;
+    }
     edit(|text| {
         let t = set(text, "core", "intf", "skins2,any");
         set(&t, "skins2", "skins2-last", &file.display().to_string())
     })
 }
 
-/// VLC back to its normal interface (the skin stays chosen, unused) and the skins removed.
+/// Where the interface of VLC before HeMi Dark is kept: %AppData%\HeMi\HeMiLauncher\vlc-intf.txt (empty: VLC had none
+/// written, its default).
+fn intf_file() -> PathBuf {
+    crate::settings::data_dir().join("vlc-intf.txt")
+}
+
+/// VLC back to the interface it had before (the skin stays chosen, unused) and the skins removed.
 pub fn remove() -> Result<(), String> {
     let tr = crate::i18n::tr;
     if vlc_running() {
         return Err(tr("Close VLC first – it writes its settings when it ends.", "Nejdřív zavři VLC – při ukončení přepíše své nastavení.").into());
     }
     if current().is_some() {
-        edit(|text| set(text, "core", "intf", "qt"))?;
+        // set by an older launcher (nothing kept): the normal interface of VLC
+        let before = std::fs::read_to_string(intf_file()).unwrap_or_else(|_| "qt".into());
+        let before = before.trim().to_string();
+        edit(|text| if before.is_empty() { unset(text, "core", "intf") } else { set(text, "core", "intf", &before) })?;
     }
-    std::fs::remove_dir_all(folder()).map_err(|e| e.to_string())
+    // cleaning up: no longer needed
+    let _ = std::fs::remove_file(intf_file());
+    match std::fs::remove_dir_all(folder()) {
+        Err(e) if e.kind() != std::io::ErrorKind::NotFound => Err(e.to_string()),
+        _ => Ok(()),
+    }
 }
 
-/// Changes vlcrc (made when VLC has never been started): its encoding and line ends kept.
+/// Changes vlcrc (made when VLC has never been started): its encoding and line ends kept. A vlcrc that is not UTF-8 is
+/// left as it is (it would be damaged); the new one is written next to it first and then takes its place.
 fn edit(change: impl Fn(&str) -> String) -> Result<(), String> {
     let path = vlcrc();
     let bytes = std::fs::read(&path).unwrap_or_default();
     let bom = bytes.starts_with(&[0xEF, 0xBB, 0xBF]);
-    let text = String::from_utf8_lossy(if bom { &bytes[3..] } else { &bytes }).to_string();
+    let text = std::str::from_utf8(if bom { &bytes[3..] } else { &bytes })
+        .map_err(|_| format!("{}: {}", path.display(), crate::i18n::tr("not UTF-8 text – not changed", "není text v UTF-8 – nezměněno")))?;
     let crlf = text.contains("\r\n");
     let new = change(&text.replace("\r\n", "\n"));
     let new = if crlf { new.replace('\n', "\r\n") } else { new };
     let mut out = if bom { vec![0xEF, 0xBB, 0xBF] } else { vec![] };
     out.extend_from_slice(new.as_bytes());
     std::fs::create_dir_all(vlc_data()).map_err(|e| e.to_string())?;
-    // a copy of the settings as they were, once
+    // a copy of the settings as they were, once – without it vlcrc is not changed
     let backup = vlc_data().join("vlcrc.before-hemidark");
     if !backup.exists() && path.exists() {
-        let _ = std::fs::copy(&path, &backup);
+        std::fs::copy(&path, &backup).map_err(|e| format!("{}: {e}", backup.display()))?;
     }
-    std::fs::write(&path, out).map_err(|e| e.to_string())
+    let tmp = vlc_data().join("vlcrc.hemilauncher-tmp");
+    std::fs::write(&tmp, out).map_err(|e| e.to_string())?;
+    std::fs::rename(&tmp, &path).map_err(|e| {
+        // cleaning up: the new text that could not take its place
+        let _ = std::fs::remove_file(&tmp);
+        e.to_string()
+    })
+}
+
+/// The text without `key=…` in the section (VLC then uses its default).
+fn unset(text: &str, section: &str, key: &str) -> String {
+    let mut inside = false;
+    let lines: Vec<&str> = text
+        .lines()
+        .filter(|line| {
+            let l = line.trim();
+            if let Some(head) = l.strip_prefix('[') {
+                inside = head.starts_with(&format!("{section}]"));
+                return true;
+            }
+            !(inside && l.starts_with(&format!("{key}=")))
+        })
+        .collect();
+    lines.join("\n") + "\n"
 }
 
 /// The value of a key in a section of vlcrc ("[core] # main program" starts the section "core").
@@ -190,12 +238,10 @@ fn value(text: &str, section: &str, key: &str) -> Option<String> {
     let mut inside = false;
     for line in text.lines() {
         let l = line.trim();
-        if l.starts_with('[') {
-            inside = l[1..].starts_with(&format!("{section}]"));
-        } else if inside {
-            if let Some(v) = l.strip_prefix(&format!("{key}=")) {
-                return Some(v.to_string());
-            }
+        if let Some(head) = l.strip_prefix('[') {
+            inside = head.starts_with(&format!("{section}]"));
+        } else if inside && let Some(v) = l.strip_prefix(&format!("{key}=")) {
+            return Some(v.to_string());
         }
     }
     None
@@ -210,8 +256,8 @@ fn set(text: &str, section: &str, key: &str, val: &str) -> String {
     let mut commented = None;
     for (i, line) in lines.iter().enumerate() {
         let l = line.trim();
-        if l.starts_with('[') {
-            inside = l[1..].starts_with(&format!("{section}]"));
+        if let Some(head) = l.strip_prefix('[') {
+            inside = head.starts_with(&format!("{section}]"));
             if inside {
                 heading = Some(i);
             }
@@ -249,6 +295,15 @@ mod tests {
         assert_eq!(value(&t, "skins2", "skins2-last").as_deref(), Some(r"C:\x\HeMi-Dark-blue-125.vlt"));
         let fresh = set("", "core", "intf", "skins2,any");
         assert_eq!(value(&fresh, "core", "intf").as_deref(), Some("skins2,any"));
+    }
+
+    #[test]
+    fn unsets_a_key_in_its_section_only() {
+        let text = "[qt] # Qt\nintf=keep\n[core] # main\n#intf=\nintf=skins2,any\nother=1\n";
+        let t = unset(text, "core", "intf");
+        assert_eq!(value(&t, "core", "intf"), None);
+        assert_eq!(value(&t, "qt", "intf").as_deref(), Some("keep"));
+        assert!(t.contains("#intf=") && t.contains("other=1"));
     }
 }
 

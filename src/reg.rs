@@ -18,6 +18,7 @@ pub fn read(machine: bool, key: &str, name: &str) -> Option<String> {
     let mut buf = vec![0u16; 4096];
     let mut size = (buf.len() * 2) as u32;
     let flags = RRF_RT_REG_SZ | if machine { RRF_SUBKEY_WOW6464KEY } else { 0 };
+    // SAFETY: NUL-ended names; `size` is the size of `buf` in bytes, so the API writes no more (a longer value fails).
     let r = unsafe { RegGetValueW(root, k.as_ptr(), n.as_ptr(), flags, null_mut(), buf.as_mut_ptr() as _, &mut size) };
     if r != ERROR_SUCCESS {
         return None;
@@ -32,6 +33,7 @@ pub fn first_byte_user(key: &str, name: &str) -> Option<u8> {
     let (k, n) = (wide(key), wide(name));
     let mut buf = [0u8; 64];
     let mut size = buf.len() as u32;
+    // SAFETY: NUL-ended names; `size` is the length of `buf`, so the API writes no more.
     let r = unsafe { RegGetValueW(HKEY_CURRENT_USER, k.as_ptr(), n.as_ptr(), RRF_RT_REG_BINARY, null_mut(), buf.as_mut_ptr() as _, &mut size) };
     (r == ERROR_SUCCESS && size > 0).then_some(buf[0])
 }
@@ -39,6 +41,8 @@ pub fn first_byte_user(key: &str, name: &str) -> Option<u8> {
 /// A string value of the user.
 pub fn write_user(key: &str, name: &str, value: &str) -> bool {
     let (k, n, v) = (wide(key), wide(name), wide(value));
+    // SAFETY: NUL-ended strings that live through the calls; the key is closed only when it was opened; the data size
+    // is the length of `v` in bytes (with its NUL, as REG_SZ wants).
     unsafe {
         let mut hkey: HKEY = null_mut();
         if RegCreateKeyExW(HKEY_CURRENT_USER, k.as_ptr(), 0, null(), 0, KEY_WRITE, null(), &mut hkey, null_mut()) != ERROR_SUCCESS {
@@ -52,5 +56,6 @@ pub fn write_user(key: &str, name: &str, value: &str) -> bool {
 
 pub fn delete_user(key: &str, name: &str) {
     let (k, n) = (wide(key), wide(name));
+    // SAFETY: NUL-ended names that live through the call. Not there = nothing to delete (the result is not needed).
     unsafe { RegDeleteKeyValueW(HKEY_CURRENT_USER, k.as_ptr(), n.as_ptr()) };
 }

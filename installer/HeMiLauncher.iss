@@ -125,6 +125,9 @@ Root: HKCU; Subkey: "Software\Microsoft\Windows\CurrentVersion\Notifications\Set
 [UninstallDelete]
 Type: filesandordirs; Name: "{localappdata}\HeMi\HeMiLauncher"
 Type: dirifempty; Name: "{localappdata}\HeMi"
+; what the launcher leaves in %TEMP% (the licences it showed, the skins of HeMi Dark while unpacking)
+Type: files; Name: "{%TEMP}\HeMiLauncher-ThirdPartyNotices.txt"
+Type: filesandordirs; Name: "{%TEMP}\HeMiLauncher-HeMiDark"
 
 [Code]
 // Since 2026-11 the HeMi apps go into one folder HeMi, as their settings do (%AppData%\HeMi\<app>): {autopf}\HeMi\HeMiLauncher.
@@ -152,14 +155,19 @@ begin
     Result := '';
 end;
 
+// the folder goes into the command as a PowerShell string in apostrophes (an apostrophe in it doubled, as PowerShell
+// wants) and is compared as text (StartsWith) - not with -like, which takes [ ] in a path for wildcards
 procedure StopOld;
 var
   Code: Integer;
+  Folder: String;
 begin
   OldFolder := FindOldFolder;
   if OldFolder = '' then Exit;
+  Folder := OldFolder + '\';
+  StringChangeEx(Folder, '''', '''''', True);
   Exec(ExpandConstant('{sys}\WindowsPowerShell\v1.0\powershell.exe'),
-    '-NoProfile -NonInteractive -Command "Get-Process | Where-Object { $_.Path -like ''' + OldFolder + '\*'' } | Stop-Process -Force"',
+    '-NoProfile -NonInteractive -Command "$d = ''' + Folder + '''; Get-Process | Where-Object { $_.Path -and $_.Path.StartsWith($d, [System.StringComparison]::OrdinalIgnoreCase) } | Stop-Process -Force"',
     '', SW_HIDE, ewWaitUntilTerminated, Code);
 end;
 

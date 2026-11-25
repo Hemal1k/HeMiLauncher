@@ -146,8 +146,28 @@ pub fn version_of(text: &str) -> Vec<u32> {
     text.trim().trim_start_matches(['v', 'V']).split('.').map(|p| p.chars().take_while(char::is_ascii_digit).collect::<String>().parse().unwrap_or(0)).collect()
 }
 
+/// `latest` is a newer version than `installed` ("1.4" and "1.4.0" are the same).
 pub fn newer(latest: &str, installed: &str) -> bool {
-    version_of(latest) > version_of(installed)
+    let (mut a, mut b) = (version_of(latest), version_of(installed));
+    let n = a.len().max(b.len());
+    a.resize(n, 0);
+    b.resize(n, 0);
+    a > b
+}
+
+#[cfg(test)]
+mod tests {
+    use super::newer;
+
+    #[test]
+    fn compares_versions() {
+        assert!(!newer("1.4.0", "1.4"));
+        assert!(!newer("1.4", "1.4.0"));
+        assert!(newer("1.4.1", "1.4"));
+        assert!(newer("1.10.0", "1.9.9"));
+        assert!(newer("v2.0", "1.99.99"));
+        assert!(!newer("1.4.3", "1.4.4"));
+    }
 }
 
 /// The file the launcher leaves in a portable folder: the version it unpacked there.

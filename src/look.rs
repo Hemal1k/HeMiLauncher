@@ -29,12 +29,13 @@ impl Look {
         l
     }
 
-    pub fn save(&self) {
-        if let Some(f) = file() {
-            if let Some(dir) = f.parent() {
-                let _ = std::fs::create_dir_all(dir);
-            }
-            let _ = std::fs::write(f, format!("Theme={}\nLanguage={}\n", self.theme, self.language));
+    /// Writes the choice; the error is for the window to show (the choice still applies until the launcher ends).
+    pub fn save(&self) -> Result<(), String> {
+        let failed = |e: std::io::Error| format!("{} ({e})", crate::i18n::tr("The settings could not be saved", "Nastavení nešlo uložit"));
+        let Some(f) = file() else { return Ok(()) };
+        if let Some(dir) = f.parent() {
+            std::fs::create_dir_all(dir).map_err(failed)?;
         }
+        std::fs::write(f, format!("Theme={}\nLanguage={}\n", self.theme, self.language)).map_err(failed)
     }
 }

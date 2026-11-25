@@ -50,6 +50,7 @@ pub fn show_main() {
     if h.is_null() {
         return;
     }
+    // SAFETY: `h` is the window of the app (not null); these calls only take its handle.
     unsafe {
         ShowWindow(h, if IsIconic(h) != 0 { SW_RESTORE } else { SW_SHOW });
         SetForegroundWindow(h);
@@ -63,11 +64,13 @@ pub fn show_main() {
 pub fn hide_main() {
     let h = MAIN.load(Ordering::Relaxed) as HWND;
     if !h.is_null() {
+        // SAFETY: the window of the app (not null), only its handle is passed.
         unsafe { ShowWindow(h, SW_HIDE) };
     }
 }
 
 fn data(hwnd: HWND) -> NOTIFYICONDATAW {
+    // SAFETY: NOTIFYICONDATAW is plain data; all zeroes is a valid (empty) value.
     let mut nid: NOTIFYICONDATAW = unsafe { std::mem::zeroed() };
     nid.cbSize = size_of::<NOTIFYICONDATAW>() as u32;
     nid.hWnd = hwnd;
@@ -79,6 +82,8 @@ fn add_icon(hwnd: HWND) {
     let mut nid = data(hwnd);
     nid.uFlags = NIF_ICON | NIF_TIP | NIF_MESSAGE;
     nid.uCallbackMessage = CALLBACK;
+    // SAFETY: the icon of this exe (resource 1) or the system one; `nid` is filled with its size set and lives through
+    // the call.
     unsafe {
         let icon = LoadIconW(GetModuleHandleW(null()), 1 as _);
         nid.hIcon = if icon.is_null() { LoadIconW(null_mut(), IDI_APPLICATION) } else { icon };
@@ -97,6 +102,7 @@ pub fn set_tip(text: &str) {
     let mut nid = data(h);
     nid.uFlags = NIF_TIP;
     copy(&mut nid.szTip, text);
+    // SAFETY: `nid` is a filled NOTIFYICONDATAW (its size set) that lives through the call.
     unsafe { Shell_NotifyIconW(NIM_MODIFY, &nid) };
 }
 
@@ -104,6 +110,7 @@ pub fn remove() {
     let h = TRAY.load(Ordering::Relaxed) as HWND;
     if !h.is_null() {
         let nid = data(h);
+        // SAFETY: as in `set_tip`.
         unsafe { Shell_NotifyIconW(NIM_DELETE, &nid) };
     }
 }
@@ -116,7 +123,9 @@ fn copy<const N: usize>(to: &mut [u16; N], text: &str) {
 
 static TASKBAR_CREATED: AtomicIsize = AtomicIsize::new(0);
 
+/// The window procedure of the hidden window of the icon (called by Windows on the thread of the icon only).
 unsafe extern "system" fn proc(hwnd: HWND, msg: u32, wparam: WPARAM, lparam: LPARAM) -> LRESULT {
+    // SAFETY: Windows passes a valid `hwnd` and the message; the rest is passed on unchanged to DefWindowProcW.
     unsafe {
         if msg == CALLBACK {
             match lparam as u32 {
@@ -146,7 +155,9 @@ unsafe extern "system" fn proc(hwnd: HWND, msg: u32, wparam: WPARAM, lparam: LPA
     }
 }
 
+/// The menu of the icon. Safety: `hwnd` is the window of the icon, on its thread.
 unsafe fn menu(hwnd: HWND) {
+    // SAFETY: the menu is made, shown and destroyed here; its texts are NUL-ended and live until AppendMenuW returns.
     unsafe {
         let m = CreatePopupMenu();
         let items = [(1usize, tr("Open HeMi Launcher", "Otevřít HeMi Launcher")), (2, tr("Check for updates", "Zkontrolovat aktualizace"))];
@@ -189,6 +200,7 @@ pub fn first() -> bool {
     use windows_sys::Win32::Foundation::{ERROR_ALREADY_EXISTS, GetLastError};
     use windows_sys::Win32::System::Threading::CreateMutexW;
     let name = wide("Local\\HeMiLauncher.Window");
+    // SAFETY: a NUL-ended name; the handle is left open on purpose (the mutex lives as long as the process).
     unsafe {
         let handle = CreateMutexW(null(), 0, name.as_ptr());
         !handle.is_null() && GetLastError() != ERROR_ALREADY_EXISTS
@@ -198,11 +210,16 @@ pub fn first() -> bool {
 /// Wakes the running launcher (through the window of its icon – it finds also the hidden one).
 pub fn wake(check: bool) {
     let class = wide("HeMiLauncherTray");
+    // SAFETY: a NUL-ended class name; the window found is only asked for its process and sent a message.
     unsafe {
         let h = FindWindowW(class.as_ptr(), null());
         if !h.is_null() {
-            // the running one may bring its window to the front
-            AllowSetForegroundWindow(u32::MAX);
+            // the running one (only it, not any process) may bring its window to the front
+            let mut pid = 0u32;
+            GetWindowThreadProcessId(h, &mut pid);
+            if pid != 0 {
+                AllowSetForegroundWindow(pid);
+            }
             PostMessageW(h, WAKE, check as usize, 0);
         }
     }
@@ -214,6 +231,8 @@ pub fn start(main_hwnd: isize, ctx: egui::Context, events: Sender<Event>, tip: &
     let _ = CTX.set(ctx);
     let _ = EVENTS.set(Mutex::new(events));
     *TIP.lock().unwrap() = tip.to_string();
+    // SAFETY: the class and the window are made on this thread, which then runs their message loop; the names are
+    // NUL-ended and live while used (the class name for the whole loop); WNDCLASSW and MSG are plain data.
     std::thread::spawn(|| unsafe {
         let instance = GetModuleHandleW(null());
         let class = wide("HeMiLauncherTray");

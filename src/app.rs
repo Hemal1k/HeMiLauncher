@@ -63,8 +63,6 @@ struct Toast {
 
 pub struct LauncherApp {
     c: Ctx,
-    /// the section "Other" (HeMi Dark) unfolded – folded at every start
-    other_open: std::cell::Cell<bool>,
     now: Sender<()>,
     events: Receiver<Event>,
     page: Page,
@@ -119,7 +117,6 @@ impl LauncherApp {
         let img = egui::ColorImage::from_rgba_unmultiplied([64, 64], include_bytes!("../assets/github-64.rgba"));
         icons.insert("github", cc.egui_ctx.load_texture("github", img, egui::TextureOptions::LINEAR));
         let mut app = LauncherApp {
-            other_open: std::cell::Cell::new(false),
             c,
             now,
             events,
@@ -148,7 +145,7 @@ impl LauncherApp {
     fn read_installed(&mut self) {
         self.installed = APPS.iter().map(|a| (a.id, catalog::installed(a))).collect();
         let dir = self.c.settings.lock().unwrap().portable();
-        self.portable = APPS.iter().map(|a| (a.id, dir.as_deref().and_then(|d| catalog::portable(a, d)))).collect();
+        self.portable = APPS.iter().map(|a| (a.id, catalog::portable(a, &dir))).collect();
         self.vlc_choices = crate::vlc::choices();
         self.vlc_now = crate::vlc::current();
         self.installed_read = Instant::now();
@@ -354,35 +351,15 @@ impl LauncherApp {
             ui.add_space(4.0);
         }
         ui.add_space(14.0);
-        // the apps, then what is not an app of Windows under "Other": HeMi Dark (skins for VLC, the user 2026-11-19) and
-        // HeMiTube (an extension for the browser, the user 2026-11-23)
+        // one grid of all of them (3 × 3, the whole of it in the window – the user, 2026-11-24): the apps of Windows first,
+        // HeMiTube (an extension for the browser) and HeMi Dark (skins for VLC) on the last two places – no section
+        // "Other" any more
         let is_other = |a: &&AppInfo| matches!(a.kind, Kind::Files | Kind::Extension);
-        let apps: Vec<&'static AppInfo> = APPS.iter().filter(|a| !is_other(a)).collect();
-        let other: Vec<&'static AppInfo> = APPS.iter().filter(is_other).collect();
+        let mut apps: Vec<&'static AppInfo> = APPS.iter().filter(|a| !is_other(a)).collect();
+        apps.extend(APPS.iter().filter(|a| a.kind == Kind::Extension));
+        apps.extend(APPS.iter().filter(|a| a.kind == Kind::Files));
         section(ui, &self.p, tr("Apps", "Aplikace"));
         self.cards(ui, &apps, st, acts);
-        if !other.is_empty() {
-            ui.add_space(4.0);
-            // folded at the start, a click on the heading unfolds it (the user, 2026-11-19)
-            let open = self.other_open.get();
-            let head = ui
-                .horizontal(|ui| {
-                    ui.spacing_mut().item_spacing.x = 6.0;
-                    let chevron = if open { glyph::CHEVRON_DOWN } else { glyph::CHEVRON_RIGHT };
-                    ui.label(RichText::new(chevron.to_string()).font(theme::icon(11.0)).color(self.p.text2));
-                    ui.label(RichText::new(tr("Other", "Ostatní")).font(theme::semibold(14.0)).color(self.p.text));
-                })
-                .response
-                .interact(egui::Sense::click())
-                .on_hover_cursor(egui::CursorIcon::PointingHand);
-            if head.clicked() {
-                self.other_open.set(!open);
-            }
-            ui.add_space(4.0);
-            if open {
-                self.cards(ui, &other, st, acts);
-            }
-        }
     }
 
     /// Cards in a grid, as on the website: as many columns as fit (at least 300 px each).
@@ -538,11 +515,11 @@ impl LauncherApp {
                     let label_refs: Vec<&str> = labels.iter().map(String::as_str).collect();
                     let ci = colours.iter().position(|c| *c == now_c).unwrap_or(usize::MAX);
                     let si = sizes.iter().position(|s| *s == now_s).unwrap_or(usize::MAX);
-                    if let Some(i) = crate::widgets::dropdown(ui, &p, ci, &names, 150.0) {
+                    if let Some(i) = crate::widgets::dropdown(ui, &p, ci, &names, 118.0) {
                         let size = if now_s == 0 { crate::vlc::size_for_screen(sizes) } else { now_s };
                         acts.push(Action::VlcSkin(colours[i].to_string(), size));
                     }
-                    if let Some(i) = crate::widgets::dropdown(ui, &p, si, &label_refs, 96.0) {
+                    if let Some(i) = crate::widgets::dropdown(ui, &p, si, &label_refs, 88.0) {
                         let colour = if now_c.is_empty() { "blue".to_string() } else { now_c.clone() };
                         acts.push(Action::VlcSkin(colour, sizes[i]));
                     }
@@ -665,7 +642,9 @@ impl LauncherApp {
             ui.label(RichText::new(i18n::date(&r.date)).size(13.0).color(p.text2));
             ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
                 if Btn::new(tr("On GitHub", "Na GitHubu")).icon(glyph::GLOBE).show(ui, &p).clicked() {
-                    acts.push(Action::Url(r.page.clone()));
+                    // the page of the release (only a link to the HeMi projects is kept), else the releases of the project
+                    let page = if r.page.is_empty() { format!("https://github.com/Hemal1k/{id}/releases") } else { r.page.clone() };
+                    acts.push(Action::Url(page));
                 }
             });
         });
@@ -681,7 +660,7 @@ impl LauncherApp {
         let s = self.c.settings.lock().unwrap().clone();
         ui.spacing_mut().item_spacing.y = 4.0;
         // a title and the switch, the height of the other rows (no descriptions – the user, 2026-11-15)
-        let row = |ui: &mut egui::Ui, title: &str, _detail: &str, on: bool| -> bool {
+        let row = |ui: &mut egui::Ui, title: &str, on: bool| -> bool {
             let mut clicked = false;
             card(ui, &p, |ui| {
                 row_layout(ui, 44.0, |ui| {
@@ -719,21 +698,21 @@ impl LauncherApp {
         }
         ui.add_space(14.0);
         section(ui, &p, tr("Updates", "Aktualizace"));
-        if row(ui, tr("Check for updates automatically", "Automaticky kontrolovat aktualizace"), "", s.auto_check) {
+        if row(ui, tr("Check for updates automatically", "Automaticky kontrolovat aktualizace"), s.auto_check) {
             acts.push(Action::Set(Settings { auto_check: !s.auto_check, ..s.clone() }));
         }
-        if row(ui, tr("Install updates in the background", "Instalovat aktualizace na pozadí"), "", s.auto_install) {
+        if row(ui, tr("Install updates in the background", "Instalovat aktualizace na pozadí"), s.auto_install) {
             acts.push(Action::Set(Settings { auto_install: !s.auto_install, ..s.clone() }));
         }
-        if row(ui, tr("Notify about new versions", "Upozorňovat na nové verze"), "", s.notify) {
+        if row(ui, tr("Notify about new versions", "Upozorňovat na nové verze"), s.notify) {
             acts.push(Action::Set(Settings { notify: !s.notify, ..s.clone() }));
         }
         ui.add_space(14.0);
         section(ui, &p, tr("Start", "Spouštění"));
-        if row(ui, tr("Start with Windows", "Spouštět s Windows"), "", self.autostart) {
+        if row(ui, tr("Start with Windows", "Spouštět s Windows"), self.autostart) {
             acts.push(Action::Autostart(!self.autostart));
         }
-        if row(ui, tr("Hide in the notification area when closed", "Zavřením okna se skryje do oznamovací oblasti"), "", s.tray_on_close) {
+        if row(ui, tr("Hide in the notification area when closed", "Zavřením okna se skryje do oznamovací oblasti"), s.tray_on_close) {
             acts.push(Action::Set(Settings { tray_on_close: !s.tray_on_close, ..s.clone() }));
         }
         ui.add_space(14.0);
@@ -741,7 +720,7 @@ impl LauncherApp {
         card(ui, &p, |ui| {
             row_layout(ui, 48.0, |ui| {
                 // the Downloads folder unless another one is chosen
-                let detail = s.portable().map(|d| d.display().to_string()).unwrap_or_default();
+                let detail = s.portable().display().to_string();
                 ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
                     if !s.portable_dir.trim().is_empty() && Btn::new(tr("Downloads", "Stažené soubory")).tip(tr("Back to the Downloads folder", "Zpět do složky Stažené soubory")).show(ui, &p).clicked() {
                         acts.push(Action::ClearPortableDir);
@@ -798,8 +777,10 @@ impl LauncherApp {
         for a in acts {
             match a {
                 Action::SetLook(l) => {
-                    l.save();
                     crate::i18n::set(l.language);
+                    if let Err(e) = l.save() {
+                        self.toast(e, Tone::Critical);
+                    }
                     self.look = l;
                     // the new colours at once, not after the next look at the theme
                     self.theme_checked = Instant::now().checked_sub(Duration::from_secs(5)).unwrap_or_else(Instant::now);
@@ -828,10 +809,10 @@ impl LauncherApp {
                 Action::UpdateSelf => self.c.spawn(|c| c.update_self(true)),
                 Action::AddToBrowser(i) => {
                     let folder = crate::catalog::extension_base().join("HeMiTube");
-                    if let Some(b) = crate::browsers::found().get(i) {
-                        if let Err(e) = crate::browsers::open_guide(b, &folder) {
-                            self.toast(e, Tone::Caution);
-                        }
+                    if let Some(b) = crate::browsers::found().get(i)
+                        && let Err(e) = crate::browsers::open_guide(b, &folder)
+                    {
+                        self.toast(e, Tone::Caution);
                     }
                 }
                 Action::VlcSkin(colour, size) => {
@@ -849,11 +830,14 @@ impl LauncherApp {
                             _ => None,
                         };
                         if let Some(exe) = exe {
-                            if app.kind == Kind::Extension {
+                            let r = if app.kind == Kind::Extension {
                                 // the folder the browser loads, not the manifest
-                                let _ = std::process::Command::new("explorer.exe").arg(exe.parent().unwrap_or(&exe)).spawn();
+                                std::process::Command::new("explorer.exe").arg(exe.parent().unwrap_or(&exe)).spawn().map(|_| ()).map_err(|e| e.to_string())
                             } else {
-                                crate::jobs::open(&exe);
+                                crate::jobs::open(&exe)
+                            };
+                            if let Err(e) = r {
+                                self.toast(format!("{}: {e}", app.name), Tone::Critical);
                             }
                         }
                     }
@@ -863,12 +847,14 @@ impl LauncherApp {
                 Action::PickPortableDir => {
                     let start = self.c.settings.lock().unwrap().portable();
                     let mut d = rfd::FileDialog::new().set_title(tr("Folder for portable versions", "Složka pro portable verze"));
-                    if let Some(s) = start.filter(|s| s.is_dir()) {
-                        d = d.set_directory(s);
+                    if start.is_dir() {
+                        d = d.set_directory(start);
                     }
                     if let Some(dir) = d.pick_folder() {
                         let s = Settings { portable_dir: dir.display().to_string(), ..self.c.settings.lock().unwrap().clone() };
-                        s.save();
+                        if let Err(e) = s.save() {
+                            self.toast(e, Tone::Critical);
+                        }
                         *self.c.settings.lock().unwrap() = s;
                         self.read_installed();
                         self.c.spawn(|c| {
@@ -878,7 +864,9 @@ impl LauncherApp {
                 }
                 Action::ClearPortableDir => {
                     let s = Settings { portable_dir: String::new(), ..self.c.settings.lock().unwrap().clone() };
-                    s.save();
+                    if let Err(e) = s.save() {
+                        self.toast(e, Tone::Critical);
+                    }
                     *self.c.settings.lock().unwrap() = s;
                     self.read_installed();
                     self.c.spawn(|c| {
@@ -886,7 +874,9 @@ impl LauncherApp {
                     });
                 }
                 Action::Uninstall(id) => self.c.spawn(move |c| c.uninstall(id)),
-                Action::Url(u) => shell_open(&u),
+                // only web pages – an address from GitHub that is not one never reaches ShellExecute
+                Action::Url(u) if u.starts_with("https://") => shell_open(&u),
+                Action::Url(_) => {}
                 Action::Licences => {
                     let file = std::env::temp_dir().join("HeMiLauncher-ThirdPartyNotices.txt");
                     match std::fs::write(&file, include_str!("../assets/ThirdPartyNotices.txt")) {
@@ -895,7 +885,9 @@ impl LauncherApp {
                     }
                 }
                 Action::Set(s) => {
-                    s.save();
+                    if let Err(e) = s.save() {
+                        self.toast(e, Tone::Critical);
+                    }
                     let turned_on = s.auto_check && !self.c.settings.lock().unwrap().auto_check;
                     *self.c.settings.lock().unwrap() = s;
                     if turned_on {
@@ -903,7 +895,9 @@ impl LauncherApp {
                     }
                 }
                 Action::Autostart(on) => {
-                    settings::set_autostart(on);
+                    if !settings::set_autostart(on) {
+                        self.toast(tr("The start with Windows could not be fully set.", "Spouštění s Windows nešlo úplně nastavit."), Tone::Caution);
+                    }
                     self.autostart = settings::autostart();
                 }
                 Action::DismissToast => self.toast = None,
@@ -1062,5 +1056,6 @@ fn shell_open(target: &str) {
     use windows_sys::Win32::UI::Shell::ShellExecuteW;
     use windows_sys::Win32::UI::WindowsAndMessaging::SW_SHOWNORMAL;
     let (verb, t) = (crate::reg::wide("open"), crate::reg::wide(target));
+    // SAFETY: both strings are NUL-ended and live until the call returns; the other pointers may be null by the API.
     unsafe { ShellExecuteW(std::ptr::null_mut(), verb.as_ptr(), t.as_ptr(), std::ptr::null(), std::ptr::null(), SW_SHOWNORMAL) };
 }

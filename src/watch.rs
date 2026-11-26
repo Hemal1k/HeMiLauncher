@@ -14,7 +14,6 @@ use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant, SystemTime};
 
 /// How often the watcher looks.
-const EVERY: Duration = Duration::from_secs(4 * 60 * 60);
 
 #[derive(Clone, Debug)]
 pub enum Phase {
@@ -89,11 +88,16 @@ impl Ctx {
             st.checking = true;
         }
         self.repaint();
+        crate::log::write(if by_user { "Check for updates (asked)" } else { "Check for updates (automatic)" });
         let all = jobs::check(by_user);
         let mut failed = None;
         {
             let mut st = self.state.lock().unwrap();
             for (id, r) in all {
+                match &r {
+                    Ok(r) => crate::log::write(format!("  {id}: latest {}", r.version)),
+                    Err(e) => crate::log::write(format!("  {id}: {e}")),
+                }
                 match r {
                     Ok(r) => {
                         st.releases.insert(id, r);
@@ -108,6 +112,8 @@ impl Ctx {
             st.checked = Some(SystemTime::now());
         }
         let ups = self.refresh_updates();
+        let list: Vec<String> = ups.iter().map(|(id, v)| format!("{id} {v}")).collect();
+        crate::log::write(format!("New versions: {}", if list.is_empty() { "none".to_string() } else { list.join(", ") }));
         self.repaint();
         if by_user {
             return;
@@ -180,7 +186,18 @@ impl Ctx {
         let dir = self.settings.lock().unwrap().portable();
         let before = catalog::installed(app);
         let had = catalog::portable(app, &dir);
-        let result = match app.kind {
+        // HeMiMizer: only downloaded while its latest release has no installer
+        let kind = app.kind_for(Some(&release));
+        let how = match kind {
+            catalog::Kind::App if portable => "portable",
+            catalog::Kind::App if before.is_some() => "update (installer, quiet)",
+            catalog::Kind::App => "install (installer)",
+            catalog::Kind::Extension => "extension",
+            catalog::Kind::Tool => "download",
+            catalog::Kind::Files => "skins for VLC",
+        };
+        crate::log::write(format!("{} {}: {how}{}", app.id, release.version, if quiet { ", in the background" } else { "" }));
+        let result = match kind {
             catalog::Kind::App if portable => jobs::install_portable(app, &release, &dir, progress).map(|()| {
                 if had.is_some() {
                     format!("{} {} {} {}", app.name, tr("updated to", "aktualizován na"), release.version, tr("(portable)", "(portable verze)"))
@@ -212,6 +229,11 @@ impl Ctx {
             catalog::Kind::Files => jobs::install_vlc_skins(app, &release, progress),
         };
         self.state.lock().unwrap().busy.remove(id);
+        crate::log::write(match &result {
+            Ok(text) => format!("{id}: done – {text}"),
+            Err(e) if e == jobs::CANCELLED => format!("{id}: cancelled"),
+            Err(e) => format!("{id}: failed – {e}"),
+        });
         match result {
             Ok(text) => {
                 if !quiet {
@@ -235,7 +257,9 @@ impl Ctx {
         let Some(app) = jobs::find(id) else { return };
         // HeMi Dark: VLC back to its normal interface, the skins removed
         if app.kind == catalog::Kind::Files {
-            if let Err(e) = crate::vlc::remove() {
+            let r = crate::vlc::remove();
+            crate::log::write(format!("{id}: remove from VLC – {}", r.as_ref().map_or_else(|e| format!("failed – {e}"), |()| "done".into())));
+            if let Err(e) = r {
                 self.message(format!("{}: {e}", app.name), false);
             }
             self.refresh_updates();
@@ -243,7 +267,9 @@ impl Ctx {
             return;
         }
         let dir = if app.kind == catalog::Kind::Extension { catalog::extension_base() } else { self.settings.lock().unwrap().portable() };
-        if let Err(e) = jobs::remove_portable(app, &dir) {
+        let r = jobs::remove_portable(app, &dir);
+        crate::log::write(format!("{id}: remove the portable version – {}", r.as_ref().map_or_else(|e| format!("failed – {e}"), |()| "done".into())));
+        if let Err(e) = r {
             self.message(format!("{}: {e}", app.name), false);
         }
         self.refresh_updates();
@@ -255,7 +281,9 @@ impl Ctx {
         let Some(i) = catalog::installed(app) else { return };
         self.state.lock().unwrap().busy.insert(id, Phase::Install);
         self.repaint();
+        crate::log::write(format!("{id} {}: uninstall", i.version));
         let r = jobs::uninstall(&i);
+        crate::log::write(format!("{id}: uninstall – {}", r.as_ref().map_or_else(|e| format!("failed – {e}"), |()| "done or declined".into())));
         self.state.lock().unwrap().busy.remove(id);
         if let Err(e) = r {
             self.message(format!("{}: {e}", app.name), false);
@@ -271,10 +299,12 @@ impl Ctx {
         let Some(release) = release else { return };
         self.state.lock().unwrap().busy.insert(LAUNCHER.id, Phase::Download(0.0));
         self.repaint();
+        crate::log::write(format!("HeMiLauncher {} → {}: update itself", env!("CARGO_PKG_VERSION"), release.version));
         let r = jobs::update_self(&release, show, |f| {
             self.state.lock().unwrap().busy.insert(LAUNCHER.id, if f >= 1.0 { Phase::Install } else { Phase::Download(f) });
             self.repaint();
         });
+        crate::log::write(format!("HeMiLauncher: update itself – {}", r.as_ref().map_or_else(|e| format!("failed – {e}"), |()| "started, this one ends".into())));
         let mut st = self.state.lock().unwrap();
         st.busy.remove(LAUNCHER.id);
         match r {
@@ -324,19 +354,25 @@ pub fn tip(updates: usize) -> String {
 pub fn start(c: Ctx, now: Receiver<()>) {
     std::thread::spawn(move || {
         // the network after the start of Windows needs a moment
-        let mut next = Instant::now() + Duration::from_secs(5);
+        let started = Instant::now();
+        let mut last: Option<Instant> = None;
         loop {
-            let wait = next.saturating_duration_since(Instant::now());
+            // how often: from the settings each time, so that a new choice counts at once (awake at least every minute)
+            let every = Duration::from_secs(u64::from(c.settings.lock().unwrap().check_hours.max(1)) * 60 * 60);
+            let due = last.map_or(started + Duration::from_secs(5), |l| l + every);
+            let wait = due.saturating_duration_since(Instant::now()).min(Duration::from_secs(60));
             match now.recv_timeout(wait) {
                 Ok(()) => {
                     c.check(true);
-                    next = Instant::now() + EVERY;
+                    last = Some(Instant::now());
                 }
                 Err(RecvTimeoutError::Timeout) => {
-                    if c.settings.lock().unwrap().auto_check {
-                        c.check(false);
+                    if Instant::now() >= due {
+                        if c.settings.lock().unwrap().auto_check {
+                            c.check(false);
+                        }
+                        last = Some(Instant::now());
                     }
-                    next = Instant::now() + EVERY;
                 }
                 Err(RecvTimeoutError::Disconnected) => break,
             }

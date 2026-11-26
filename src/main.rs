@@ -7,6 +7,7 @@ mod catalog;
 mod github;
 mod i18n;
 mod jobs;
+mod log;
 mod look;
 mod notify;
 mod reg;
@@ -65,8 +66,9 @@ fn main() -> eframe::Result {
             .with_title("HeMi Launcher")
             .with_app_id("HeMiLauncher")
             // everything at once (the user, 2026-11-24): three cards side by side, wide enough for all their buttons, and
-            // all three rows of them (3 × 3) without scrolling
-            .with_inner_size([1180.0, 800.0])
+            // all three rows of them (3 × 3) without scrolling; the height is then fitted to them after the first frames
+            // (app.rs, fit_height) – 800 left a big gap under them
+            .with_inner_size([1180.0, 720.0])
             .with_min_inner_size([640.0, 480.0])
             .with_icon(icon)
             .with_visible(!hidden)

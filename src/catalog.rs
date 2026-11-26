@@ -11,8 +11,9 @@ pub enum Kind {
     /// Files without an installer (HeMi Dark: skins for VLC) – unpacked into the skins folder of VLC and set there
     /// (vlc.rs); the colour and the size are picked in its card.
     Files,
-    /// One program without an installer, run once (HeMiMizer: after reinstalling Windows) – "<Id>.exe" (on ARM
-    /// "<Id>-arm64.exe" when the release has it – HeMiMizer has not, x64 runs there too) into the Downloads folder.
+    /// One program without an installer, run once – "<Id>.exe" (on ARM "<Id>-arm64.exe" when the release has it) into
+    /// the Downloads folder. No app is one any more: only HeMiMizer before its installer (a release without
+    /// "HeMiMizer-Setup.exe", see `AppInfo::kind_for`).
     Tool,
     /// A browser extension (HeMiTube): "<Id>.zip" unpacked into %AppData%\HeMi\<Id> (with
     /// the version file), loaded once in the browser as an unpacked extension; an update unpacks the new one in place.
@@ -29,11 +30,24 @@ pub struct AppInfo {
     /// What it is, in a few words (English, Czech).
     pub line: (&'static str, &'static str),
     pub icon: &'static [u8],
+    /// The program released as plain "<Id>.exe" for x64 only (HeMiMizer): that is its portable version (no
+    /// "-Portable", no "-arm64" – Windows on ARM runs the x64 one), and a release without "<Id>-Setup.exe" (the ones
+    /// before its installer) has only this exe – the card then just downloads it (`Kind::Tool`).
+    pub plain_exe: bool,
 }
 
 impl AppInfo {
     pub fn line(&self) -> &'static str {
         crate::i18n::tr(self.line.0, self.line.1)
+    }
+
+    /// How the app is installed with this release: an app with a plain exe whose release has no installer yet is only
+    /// downloaded (`Kind::Tool`); not known yet (no release read) – as its kind says.
+    pub fn kind_for(&self, release: Option<&crate::github::Release>) -> Kind {
+        match release {
+            Some(r) if self.plain_exe && r.asset(&format!("{}-Setup.exe", self.id)).is_none() => Kind::Tool,
+            _ => self.kind,
+        }
     }
 }
 
@@ -45,6 +59,7 @@ pub const APPS: &[AppInfo] = &[
         kind: Kind::App,
         line: ("A dock, Start menu, control center and window manager", "Dock, nabídka Start, ovládací centrum a správce oken"),
         icon: include_bytes!("../assets/apps/hemidock.rgba"),
+        plain_exe: false,
     },
     AppInfo {
         id: "HeMiPix",
@@ -53,6 +68,7 @@ pub const APPS: &[AppInfo] = &[
         kind: Kind::App,
         line: ("Converts photo formats and makes photos smaller", "Převod formátů fotek a zmenšení jejich velikosti"),
         icon: include_bytes!("../assets/apps/hemipix.rgba"),
+        plain_exe: false,
     },
     AppInfo {
         id: "HeMiUnlocker",
@@ -61,6 +77,7 @@ pub const APPS: &[AppInfo] = &[
         kind: Kind::App,
         line: ("Finds the program that holds a file – closes it, unlocks the file or takes ownership", "Zjistí, který program drží soubor – zavře ho, soubor odemkne nebo převezme vlastnictví"),
         icon: include_bytes!("../assets/apps/hemiunlocker.rgba"),
+        plain_exe: false,
     },
     AppInfo {
         id: "HeMiPad",
@@ -69,6 +86,7 @@ pub const APPS: &[AppInfo] = &[
         kind: Kind::App,
         line: ("A simple notepad", "Jednoduchý poznámkový blok"),
         icon: include_bytes!("../assets/apps/hemipad.rgba"),
+        plain_exe: false,
     },
     AppInfo {
         id: "HeMiTube",
@@ -78,6 +96,7 @@ pub const APPS: &[AppInfo] = &[
         kind: Kind::Extension,
         line: ("A calmer YouTube: theater mode, dislikes, quality, codecs, no Shorts", "Klidnější YouTube: režim kina, dislajky, kvalita, kodeky, bez Shorts"),
         icon: include_bytes!("../assets/apps/hemitube.rgba"),
+        plain_exe: false,
     },
     AppInfo {
         id: "HeMiDark",
@@ -86,14 +105,18 @@ pub const APPS: &[AppInfo] = &[
         kind: Kind::Files,
         line: ("A modern dark skin for VLC with support for high DPI", "Moderní tmavý vzhled pro VLC s podporou vyššího DPI"),
         icon: include_bytes!("../assets/apps/hemidark.rgba"),
+        plain_exe: false,
     },
     AppInfo {
         id: "HeMiMizer",
         name: "HeMiMizer",
-        exe: "",
-        kind: Kind::Tool,
-        line: ("Gets a freshly installed Windows ready: drivers, programs, settings", "Připraví čerstvě nainstalované Windows: ovladače, programy, nastavení"),
+        exe: "HeMiMizer.exe",
+        // an installer ("HeMiMizer-Setup.exe", entry "HeMiMizer_is1") and the portable "HeMiMizer.exe", x64 only; the
+        // releases before the installer only downloaded (kind_for)
+        kind: Kind::App,
+        line: ("Gets a fresh Windows ready: drivers, programs, settings – only what you tick", "Připraví čerstvé Windows: ovladače, programy, nastavení – jen to, co zaškrtneš"),
         icon: include_bytes!("../assets/apps/hemimizer.rgba"),
+        plain_exe: true,
     },
 ];
 
@@ -105,6 +128,7 @@ pub const LAUNCHER: AppInfo = AppInfo {
     kind: Kind::App,
     line: ("Installs and updates the HeMi apps", "Instaluje a aktualizuje aplikace HeMi"),
     icon: include_bytes!("../assets/apps/hemilauncher.rgba"),
+    plain_exe: false,
 };
 
 /// An app on this PC, as its installer left it.
@@ -167,6 +191,24 @@ mod tests {
         assert!(newer("1.10.0", "1.9.9"));
         assert!(newer("v2.0", "1.99.99"));
         assert!(!newer("1.4.3", "1.4.4"));
+    }
+
+    #[test]
+    fn hemimizer_without_its_installer_is_only_downloaded() {
+        use super::{APPS, Kind};
+        let release = |names: &[&str]| crate::github::Release {
+            version: "1.0.0".into(),
+            notes: String::new(),
+            date: String::new(),
+            page: String::new(),
+            assets: names.iter().map(|n| (n.to_string(), format!("https://github.com/Hemal1k/x/{n}"))).collect(),
+        };
+        let mizer = APPS.iter().find(|a| a.id == "HeMiMizer").unwrap();
+        assert_eq!(mizer.kind_for(Some(&release(&["HeMiMizer.exe"]))), Kind::Tool);
+        assert_eq!(mizer.kind_for(Some(&release(&["HeMiMizer-Setup.exe", "HeMiMizer.exe"]))), Kind::App);
+        assert_eq!(mizer.kind_for(None), Kind::App);
+        let pad = APPS.iter().find(|a| a.id == "HeMiPad").unwrap();
+        assert_eq!(pad.kind_for(Some(&release(&["HeMiPad-Portable.exe"]))), Kind::App);
     }
 }
 

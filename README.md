@@ -29,7 +29,9 @@ Windows 10 / 11, x64 and ARM64. Nothing else needs to be installed.
   [HeMi Dark](https://github.com/Hemal1k/HeMiDark) – each with its version, what's new, Install / Update / Open and Uninstall.
 - **Installing** runs the installer of the app with its pages (just for you or for all users, a desktop shortcut…).
   **Updating** runs it quietly – for apps installed for all users Windows asks for administrator rights.
-- **Update all** at once; HeMiMizer (one program, run after reinstalling Windows) is downloaded into the Downloads folder.
+- **Update all** at once. HeMiMizer (run after reinstalling Windows) is installed or portable like the others – its portable
+  version is the one x64 `HeMiMizer.exe` (Windows on ARM runs it too); while its latest release has no installer yet, it is
+  only downloaded into the Downloads folder.
 - **HeMiTube** (a browser extension for YouTube) is unpacked into `%AppData%\HeMi\HeMiTube`; **Add to browser**
   opens a short guide in the browser you pick (its extensions page and the folder to copy) – the browser loads it once
   (*Developer mode → Load unpacked*), later updates replace it in place (then ⟳ in the browser).
@@ -47,7 +49,9 @@ Windows 10 / 11, x64 and ARM64. Nothing else needs to be installed.
   HeMiDock shows its updates in the status bar.
 
 It reads the releases on GitHub (`api.github.com`, the TLS of Windows) – nothing else, no accounts, no telemetry. Its settings
-are in `%AppData%\HeMi\HeMiLauncher\settings.ini`.
+are in `%AppData%\HeMi\HeMiLauncher\settings.ini`. **Logging** (Settings → Troubleshooting, off by default) writes what it
+checks, downloads and installs and what failed to `log.txt` there – without the user's name or folders, at most 1 MB (then
+`log.old.txt`).
 
 Uninstalling removes the launcher, its start with Windows and its notifications, and asks whether to delete its settings.
 What it installed stays: remove the apps and their portable versions, HeMiTube (`%AppData%\HeMi\HeMiTube`) and HeMi Dark
@@ -81,6 +85,7 @@ runs the same script in `.github\workflows\release.yml` and gets the files attac
 | `src\tray.rs` | The icon in the notification area. |
 | `src\notify.rs` | Windows notifications and `updates.txt` for the other apps. |
 | `src\settings.rs` | What it remembers, the start with Windows. |
+| `src\log.rs` | The log (Settings → Logging). |
 | `src\theme.rs`, `src\widgets.rs`, `src\i18n.rs`, `src\reg.rs` | The Windows 11 look in egui, two languages, the registry. |
 | `assets` | The icons and the notices of the components. |
 

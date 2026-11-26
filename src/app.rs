@@ -53,6 +53,10 @@ enum Action {
     VlcSkin(String, u32),
     /// HeMiTube: the guide opened in this browser (index into browsers::found)
     AddToBrowser(usize),
+    /// log.txt in its program (by Explorer)
+    OpenLog,
+    /// %AppData%\HeMi\HeMiLauncher in Explorer
+    OpenSettingsFolder,
 }
 
 struct Toast {
@@ -88,6 +92,12 @@ pub struct LauncherApp {
     hide_frames: u8,
     /// the cards whose notes of the new version are unfolded
     notes_open: std::collections::HashSet<&'static str>,
+    /// The height of the window fitted to the cards (fit_height): the height asked for, the frames it has not come yet,
+    /// and off for good once the user changed the size.
+    fit_h: Option<f32>,
+    fit_wait: u32,
+    fit_off: bool,
+    shown_frames: u32,
 }
 
 impl LauncherApp {
@@ -137,6 +147,10 @@ impl LauncherApp {
             toast: None,
             hide_frames: if hidden { 3 } else { 0 },
             notes_open: Default::default(),
+            fit_h: None,
+            fit_wait: 0,
+            fit_off: false,
+            shown_frames: 0,
         };
         app.read_installed();
         app
@@ -391,6 +405,8 @@ impl LauncherApp {
         let portable = if installed.is_none() { self.portable.get(a.id).cloned().flatten() } else { None };
         let have = installed.as_ref().map(|i| i.version.clone()).or_else(|| portable.as_ref().map(|p| p.version.clone()));
         let release = st.releases.get(a.id);
+        // HeMiMizer: Install + Portable, or only Download while its latest release has no installer
+        let kind = a.kind_for(release);
         let update = match (&have, release) {
             (Some(v), Some(r)) => catalog::newer(&r.version, v),
             _ => false,
@@ -412,12 +428,12 @@ impl LauncherApp {
                     let who = match (&installed, &portable) {
                         (Some(i), _) if i.all_users => tr("Installed for all users", "Nainstalováno pro všechny uživatele"),
                         (Some(_), _) => tr("Installed", "Nainstalováno"),
-                        (None, Some(_)) if a.kind == Kind::Files => tr("In VLC", "Ve VLC"),
-                        (None, Some(_)) if a.kind == Kind::Extension => tr("Unpacked", "Rozbaleno"),
+                        (None, Some(_)) if kind == Kind::Files => tr("In VLC", "Ve VLC"),
+                        (None, Some(_)) if kind == Kind::Extension => tr("Unpacked", "Rozbaleno"),
                         (None, Some(_)) => "Portable",
-                        _ if a.kind == Kind::Extension => tr("Browser extension", "Rozšíření prohlížeče"),
-                        _ if a.kind == Kind::Files => tr("Skins for VLC", "Vzhledy pro VLC"),
-                        _ if a.kind == Kind::Tool => tr("One program, no installation", "Jeden program, bez instalace"),
+                        _ if kind == Kind::Extension => tr("Browser extension", "Rozšíření prohlížeče"),
+                        _ if kind == Kind::Files => tr("Skins for VLC", "Vzhledy pro VLC"),
+                        _ if kind == Kind::Tool => tr("One program, no installation", "Jeden program, bez instalace"),
                         _ => tr("Not installed", "Nenainstalováno"),
                     };
                     // the state of its updates, right in the card
@@ -474,7 +490,7 @@ impl LauncherApp {
                     if Btn::new(tr("Update", "Aktualizovat")).accent().show(ui, &p).clicked() {
                         acts.push(if portable.is_some() { Action::InstallPortable(a.id) } else { Action::Install(a.id) });
                     }
-                } else if have.is_some() && a.kind == Kind::Extension {
+                } else if have.is_some() && kind == Kind::Extension {
                     // the browser: one found – the guide opens there; more – a list to pick from
                     let browsers = crate::browsers::found();
                     let tip = tr("Opens a short guide in the browser: its extensions page and this folder to copy", "Otevře v prohlížeči krátký návod: jeho stránku rozšíření a tuto složku ke zkopírování");
@@ -491,11 +507,11 @@ impl LauncherApp {
                             }
                         });
                     }
-                } else if have.is_some() && a.kind != Kind::Files {
+                } else if have.is_some() && kind != Kind::Files {
                     if Btn::new(tr("Open", "Otevřít")).show(ui, &p).clicked() {
                         acts.push(Action::Open(a.id));
                     }
-                } else if a.kind == Kind::Extension {
+                } else if kind == Kind::Extension {
                     let tip = tr(
                         r"Unpacks the extension into %AppData%\HeMi\HeMiTube; the browser then loads it (Load unpacked)",
                         r"Rozbalí rozšíření do %AppData%\HeMi\HeMiTube; prohlížeč ho pak načte (Načíst rozbalené)",
@@ -503,7 +519,7 @@ impl LauncherApp {
                     if Btn::new(tr("Download", "Stáhnout")).accent().enabled(release.is_some()).tip(tip).show(ui, &p).clicked() {
                         acts.push(Action::Install(a.id));
                     }
-                } else if have.is_some() && a.kind == Kind::Files {
+                } else if have.is_some() && kind == Kind::Files {
                     // the skin to use: a colour and a size, set in VLC at once
                     let (colours, sizes) = (&self.vlc_choices.0, &self.vlc_choices.1);
                     let (now_c, now_s) = self.vlc_now.clone().unwrap_or_default();
@@ -523,12 +539,13 @@ impl LauncherApp {
                         let colour = if now_c.is_empty() { "blue".to_string() } else { now_c.clone() };
                         acts.push(Action::VlcSkin(colour, sizes[i]));
                     }
-                } else if a.kind == Kind::Files {
+                } else if kind == Kind::Files {
                     let tip = tr("Unpacks the skins into VLC and turns HeMi Dark on – then pick its color and size here", "Rozbalí vzhledy do VLC a zapne HeMi Dark – barvu a velikost pak vybereš tady");
                     if Btn::new(tr("Install into VLC", "Nainstalovat do VLC")).accent().enabled(release.is_some()).tip(tip).show(ui, &p).clicked() {
                         acts.push(Action::Install(a.id));
                     }
-                } else if a.kind == Kind::Tool {
+                } else if kind == Kind::Tool {
+                    // HeMiMizer while its latest release has no installer: the program alone
                     let b = Btn::new(tr("Download", "Stáhnout")).accent().enabled(release.is_some());
                     let tip = tr("Saves the program to the Downloads folder – best copied to a USB drive", "Uloží program do složky Stažené soubory – nejlépe ho zkopíruj na USB disk");
                     if b.tip(tip).show(ui, &p).clicked() {
@@ -538,10 +555,15 @@ impl LauncherApp {
                     if Btn::new(tr("Install", "Nainstalovat")).accent().enabled(release.is_some()).show(ui, &p).clicked() {
                         acts.push(Action::Install(a.id));
                     }
-                    let tip = tr(
-                        "Saves the portable version to the Downloads folder (or the folder set in Settings)",
-                        "Uloží portable verzi do složky Stažené soubory (nebo do složky z Nastavení)",
-                    );
+                    let tip = if a.plain_exe {
+                        // HeMiMizer: the one exe, e.g. to copy to a USB drive for a fresh Windows
+                        tr(
+                            "Saves the program to the Downloads folder (or the folder set in Settings) – also good to copy to a USB drive",
+                            "Uloží program do složky Stažené soubory (nebo do složky z Nastavení) – hodí se i zkopírovat na USB disk",
+                        )
+                    } else {
+                        tr("Saves the portable version to the Downloads folder (or the folder set in Settings)", "Uloží portable verzi do složky Stažené soubory (nebo do složky z Nastavení)")
+                    };
                     if Btn::new("Portable").enabled(release.is_some()).tip(tip).show(ui, &p).clicked() {
                         acts.push(Action::InstallPortable(a.id));
                     }
@@ -551,7 +573,7 @@ impl LauncherApp {
                         acts.push(Action::Uninstall(a.id));
                     }
                     if portable.is_some()
-                        && Btn::new("").icon(glyph::DELETE).subtle().tip(match a.kind {
+                        && Btn::new("").icon(glyph::DELETE).subtle().tip(match kind {
                             Kind::Files => tr("Remove from VLC (restores its normal look)", "Odebrat z VLC (vrátí jeho běžný vzhled)"),
                             Kind::Extension => tr("Remove the unpacked extension (remove it in the browser too)", "Odstranit rozbalené rozšíření (odeber ho i v prohlížeči)"),
                             _ => tr("Remove the portable version", "Odstranit portable verzi"),
@@ -565,7 +587,7 @@ impl LauncherApp {
                         acts.push(Action::Url(format!("https://github.com/Hemal1k/{}", a.id)));
                     }
                     // the extension: its folder as an icon (a text button did not fit next to "Add to browser")
-                    if a.kind == Kind::Extension && have.is_some() {
+                    if kind == Kind::Extension && have.is_some() {
                         let tip = tr("Show folder – the browser loads it as an unpacked extension", "Zobrazit složku – prohlížeč ji načte jako rozbalené rozšíření");
                         if Btn::new("").icon(glyph::FOLDER).subtle().tip(tip).show(ui, &p).clicked() {
                             acts.push(Action::Open(a.id));
@@ -701,6 +723,27 @@ impl LauncherApp {
         if row(ui, tr("Check for updates automatically", "Automaticky kontrolovat aktualizace"), s.auto_check) {
             acts.push(Action::Set(Settings { auto_check: !s.auto_check, ..s.clone() }));
         }
+        // how often – only while it looks by itself (the user, 2026-11-25)
+        if s.auto_check {
+            let names = [
+                tr("Every hour", "Každou hodinu"),
+                tr("Every 2 hours", "Každé 2 hodiny"),
+                tr("Every 4 hours", "Každé 4 hodiny"),
+                tr("Every 12 hours", "Každých 12 hodin"),
+                tr("Once a day", "Jednou denně"),
+            ];
+            let current = crate::settings::CHECK_HOURS.iter().position(|h| *h == s.check_hours).unwrap_or(2);
+            card(ui, &p, |ui| {
+                row_layout(ui, 44.0, |ui| {
+                    ui.label(RichText::new(tr("How often", "Jak často")).size(14.0).color(p.text));
+                    ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
+                        if let Some(i) = crate::widgets::dropdown(ui, &p, current, &names, 220.0) {
+                            acts.push(Action::Set(Settings { check_hours: crate::settings::CHECK_HOURS[i], ..s.clone() }));
+                        }
+                    });
+                });
+            });
+        }
         if row(ui, tr("Install updates in the background", "Instalovat aktualizace na pozadí"), s.auto_install) {
             acts.push(Action::Set(Settings { auto_install: !s.auto_install, ..s.clone() }));
         }
@@ -738,6 +781,21 @@ impl LauncherApp {
                 });
             });
         });
+        ui.add_space(14.0);
+        // the log (off unless switched on) and the folder of the settings, for finding a problem
+        section(ui, &p, tr("Troubleshooting", "Řešení potíží"));
+        if row(ui, tr("Logging", "Logování"), s.logging) {
+            acts.push(Action::Set(Settings { logging: !s.logging, ..s.clone() }));
+        }
+        let items = [
+            (tr("Open log", "Otevřít log"), r"%AppData%\HeMi\HeMiLauncher\log.txt"),
+            (tr("Open settings folder", "Otevřít složku nastavení"), r"%AppData%\HeMi\HeMiLauncher"),
+        ];
+        match card(ui, &p, |ui| crate::widgets::button_row(ui, &p, &items)) {
+            Some(0) => acts.push(Action::OpenLog),
+            Some(_) => acts.push(Action::OpenSettingsFolder),
+            None => {}
+        }
     }
 
     fn about_page(&self, ui: &mut egui::Ui, acts: &mut Vec<Action>) {
@@ -770,6 +828,61 @@ impl LauncherApp {
             && let Some((_, _, act)) = links.into_iter().nth(i)
         {
             acts.push(act);
+        }
+    }
+
+    /// The height of the window fitted to the cards (no gap under them, the user 2026-11-26): set after the first frames,
+    /// then only made higher when they grow (a launcher bar or the notes of new versions after the check), at most the
+    /// work area of the display. `extra`: how much higher the content is than its place (below 0: the gap). Once the user
+    /// changed the size (or it is maximized), never again.
+    fn fit_height(&mut self, ctx: &egui::Context, extra: f32) {
+        if self.fit_off {
+            return;
+        }
+        // the first frames: the layout and the scaling of the display settle
+        self.shown_frames += 1;
+        if self.shown_frames < 3 {
+            return;
+        }
+        let vp = ctx.input(|i| i.viewport().clone());
+        if vp.maximized == Some(true) || vp.fullscreen == Some(true) || vp.minimized == Some(true) {
+            self.fit_off = true;
+            return;
+        }
+        let now = ctx.content_rect().size();
+        if let Some(h) = self.fit_h {
+            if (now.y - h).abs() > 1.5 {
+                // asked for, not there yet – or the user changed the size (or Windows did not allow that height)
+                self.fit_wait += 1;
+                if self.fit_wait > 10 {
+                    self.fit_off = true;
+                }
+                return;
+            }
+            self.fit_wait = 0;
+            // later only higher (a shrinking window under the mouse is no good)
+            if extra <= 1.0 {
+                return;
+            }
+        }
+        let frame = match (vp.outer_rect, vp.inner_rect) {
+            (Some(o), Some(i)) => (o.height() - i.height()).max(0.0),
+            _ => 40.0,
+        };
+        let ppp = vp.native_pixels_per_point.unwrap_or_else(|| ctx.pixels_per_point()).max(0.5);
+        let work = work_area(self.hwnd).map(|(top, bottom)| (top / ppp, bottom / ppp));
+        let max = work.map_or(f32::MAX, |(top, bottom)| bottom - top - frame);
+        let want = (now.y + extra).ceil().min(max).max(480.0);
+        self.fit_h = Some(want);
+        if (want - now.y).abs() < 1.0 {
+            return;
+        }
+        ctx.send_viewport_cmd(egui::ViewportCommand::InnerSize(vec2(now.x, want)));
+        // the bottom of the window off the work area: moved up
+        if let (Some((top, bottom)), Some(o)) = (work, vp.outer_rect)
+            && o.min.y + frame + want > bottom
+        {
+            ctx.send_viewport_cmd(egui::ViewportCommand::OuterPosition(egui::pos2(o.min.x, (bottom - frame - want).max(top))));
         }
     }
 
@@ -832,7 +945,7 @@ impl LauncherApp {
                         if let Some(exe) = exe {
                             let r = if app.kind == Kind::Extension {
                                 // the folder the browser loads, not the manifest
-                                std::process::Command::new("explorer.exe").arg(exe.parent().unwrap_or(&exe)).spawn().map(|_| ()).map_err(|e| e.to_string())
+                                std::process::Command::new(settings::explorer()).arg(exe.parent().unwrap_or(&exe)).spawn().map(|_| ()).map_err(|e| e.to_string())
                             } else {
                                 crate::jobs::open(&exe)
                             };
@@ -884,10 +997,31 @@ impl LauncherApp {
                         Err(e) => self.toast(e.to_string(), Tone::Critical),
                     }
                 }
+                Action::OpenLog => {
+                    let log = crate::log::file();
+                    if !log.exists() {
+                        let text = if self.c.settings.lock().unwrap().logging {
+                            tr("Nothing has been logged yet.", "Zatím nic není zalogováno.")
+                        } else {
+                            tr("There is no log – switch Logging on first.", "Log neexistuje – nejdřív zapni Logování.")
+                        };
+                        self.toast(text, Tone::Caution);
+                    } else if let Err(e) = std::process::Command::new(settings::explorer()).arg(&log).spawn() {
+                        self.toast(e.to_string(), Tone::Critical);
+                    }
+                }
+                Action::OpenSettingsFolder => {
+                    let dir = settings::data_dir();
+                    let _ = std::fs::create_dir_all(&dir);
+                    if let Err(e) = std::process::Command::new(settings::explorer()).arg(&dir).spawn() {
+                        self.toast(e.to_string(), Tone::Critical);
+                    }
+                }
                 Action::Set(s) => {
                     if let Err(e) = s.save() {
                         self.toast(e, Tone::Critical);
                     }
+                    crate::log::enable(s.logging);
                     let turned_on = s.auto_check && !self.c.settings.lock().unwrap().auto_check;
                     *self.c.settings.lock().unwrap() = s;
                     if turned_on {
@@ -972,7 +1106,7 @@ impl eframe::App for LauncherApp {
                     }
                 });
         }
-        egui::CentralPanel::default()
+        let scroll = egui::CentralPanel::default()
             .frame(egui::Frame::new().fill(bg).inner_margin(Margin { left: 28, right: 28, top: 0, bottom: 4 }))
             .show(ui, |ui| {
                 egui::ScrollArea::vertical().auto_shrink([false, false]).show(ui, |ui| {
@@ -985,8 +1119,13 @@ impl eframe::App for LauncherApp {
                             self.about_page(ui, &mut acts);
                         }
                     });
-                });
-            });
+                })
+            })
+            .inner;
+        // the cards as they are, without a toast under them or the notes of a version unfolded
+        if self.hide_frames == 0 && self.page == Page::Apps && self.toast.is_none() && self.notes_open.is_empty() {
+            self.fit_height(&ctx, scroll.content_size.y - scroll.inner_rect.height());
+        }
         self.act(acts);
     }
 
@@ -1050,6 +1189,25 @@ fn plain(t: &str) -> String {
         s = format!("{}{}{}", &s[..b], &s[b + 1..a], &s[a + c + 1..]);
     }
     s
+}
+
+/// The top and the bottom of the work area (without the taskbar) of the display the window is on, in pixels.
+fn work_area(hwnd: isize) -> Option<(f32, f32)> {
+    use windows_sys::Win32::Graphics::Gdi::{GetMonitorInfoW, MONITOR_DEFAULTTONEAREST, MONITORINFO, MonitorFromWindow};
+    if hwnd == 0 {
+        return None;
+    }
+    // SAFETY: the window handle is the launcher's own (or the call fails); MONITORINFO is zeroed with its size set as
+    // GetMonitorInfoW wants and only read when it succeeded.
+    unsafe {
+        let monitor = MonitorFromWindow(hwnd as _, MONITOR_DEFAULTTONEAREST);
+        if monitor.is_null() {
+            return None;
+        }
+        let mut info: MONITORINFO = std::mem::zeroed();
+        info.cbSize = std::mem::size_of::<MONITORINFO>() as u32;
+        (GetMonitorInfoW(monitor, &mut info) != 0).then_some((info.rcWork.top as f32, info.rcWork.bottom as f32))
+    }
 }
 
 fn shell_open(target: &str) {

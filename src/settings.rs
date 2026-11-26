@@ -8,6 +8,8 @@ use std::path::PathBuf;
 pub struct Settings {
     /// Look for new versions after the start and every few hours.
     pub auto_check: bool,
+    /// How often (hours, one of CHECK_HOURS), chosen in the settings (the user, 2026-11-25).
+    pub check_hours: u32,
     /// Install them by itself (in the background, quietly).
     pub auto_install: bool,
     /// A notification of Windows when there are new versions.
@@ -16,13 +18,23 @@ pub struct Settings {
     pub tray_on_close: bool,
     /// Where the portable versions go (empty: the Downloads folder).
     pub portable_dir: String,
+    /// What the launcher does written to log.txt in data_dir (log.rs) – off unless switched on.
+    pub logging: bool,
 }
 
 impl Default for Settings {
     fn default() -> Self {
-        Settings { auto_check: true, auto_install: false, notify: true, tray_on_close: true, portable_dir: String::new() }
+        Settings { auto_check: true, check_hours: 4, auto_install: false, notify: true, tray_on_close: true, portable_dir: String::new(), logging: false }
     }
 }
+
+/// Explorer by its full path (%SystemRoot%\explorer.exe), never one found in the current folder or the PATH.
+pub fn explorer() -> PathBuf {
+    std::env::var_os("SystemRoot").map(PathBuf::from).unwrap_or_else(|| PathBuf::from(r"C:\Windows")).join("explorer.exe")
+}
+
+/// The choices of how often the launcher looks for new versions (hours).
+pub const CHECK_HOURS: [u32; 5] = [1, 2, 4, 12, 24];
 
 pub fn data_dir() -> PathBuf {
     std::env::var_os("APPDATA").map(PathBuf::from).unwrap_or_default().join("HeMi").join("HeMiLauncher")
@@ -41,6 +53,7 @@ impl Settings {
     pub fn load() -> Settings {
         let mut s = Settings::read_file();
         s.take_setup_choice();
+        crate::log::enable(s.logging);
         s
     }
 
@@ -73,10 +86,18 @@ impl Settings {
             let b = v.trim() == "1";
             match k.trim() {
                 "AutoCheck" => s.auto_check = b,
+                "CheckHours" => {
+                    if let Ok(h) = v.trim().parse::<u32>()
+                        && CHECK_HOURS.contains(&h)
+                    {
+                        s.check_hours = h;
+                    }
+                }
                 "AutoInstall" => s.auto_install = b,
                 "Notify" => s.notify = b,
                 "TrayOnClose" => s.tray_on_close = b,
                 "PortableDir" => s.portable_dir = v.trim().to_string(),
+                "Logging" => s.logging = b,
                 _ => {}
             }
         }
@@ -87,12 +108,14 @@ impl Settings {
     pub fn save(&self) -> Result<(), String> {
         let b = |v: bool| if v { "1" } else { "0" };
         let text = format!(
-            "AutoCheck={}\nAutoInstall={}\nNotify={}\nTrayOnClose={}\nPortableDir={}\n",
+            "AutoCheck={}\nCheckHours={}\nAutoInstall={}\nNotify={}\nTrayOnClose={}\nPortableDir={}\nLogging={}\n",
             b(self.auto_check),
+            self.check_hours,
             b(self.auto_install),
             b(self.notify),
             b(self.tray_on_close),
-            self.portable_dir
+            self.portable_dir,
+            b(self.logging)
         );
         let failed = |e: std::io::Error| format!("{} ({e})", crate::i18n::tr("The settings could not be saved", "Nastavení nešlo uložit"));
         std::fs::create_dir_all(data_dir()).map_err(failed)?;

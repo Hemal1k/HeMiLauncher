@@ -184,6 +184,10 @@ fn portable_asset(app: &AppInfo, release: &Release) -> String {
     if app.kind == catalog::Kind::Extension {
         return format!("{}.zip", app.id);
     }
+    // a plain exe (HeMiMizer): "<Id>.exe", x64 only – Windows on ARM runs it emulated
+    if app.plain_exe {
+        return format!("{}.exe", app.id);
+    }
     let arm = cfg!(target_arch = "aarch64");
     for ext in ["exe", "zip"] {
         let names = if arm { vec![format!("{}-Portable-arm64.{ext}", app.id), format!("{}-Portable.{ext}", app.id)] } else { vec![format!("{}-Portable.{ext}", app.id)] };
@@ -288,7 +292,7 @@ pub fn install_vlc_skins(app: &AppInfo, release: &Release, progress: impl FnMut(
     })
 }
 
-/// A program without an installer (HeMiMizer): the exe for this processor into the Downloads folder.
+/// A program without an installer (HeMiMizer before its installer): the exe for this processor into the Downloads folder.
 pub fn download_tool(app: &AppInfo, release: &Release, progress: impl FnMut(f32)) -> Result<PathBuf, String> {
     // the ARM64 exe when the release has one (HeMiMizer is x64 only – Windows on ARM runs it emulated)
     let arm = format!("{}-arm64.exe", app.id);
@@ -296,7 +300,7 @@ pub fn download_tool(app: &AppInfo, release: &Release, progress: impl FnMut(f32)
     let file = crate::settings::downloads().join(format!("{}.exe", app.id));
     fetch(release, &asset, &file, progress)?;
     // only a help: the message names the file too
-    let _ = Command::new("explorer.exe").arg(format!("/select,{}", file.display())).spawn();
+    let _ = Command::new(crate::settings::explorer()).arg(format!("/select,{}", file.display())).spawn();
     Ok(file)
 }
 
@@ -343,11 +347,43 @@ pub fn uninstall(i: &Installed) -> Result<(), String> {
 }
 
 pub fn open(exe: &Path) -> Result<(), String> {
-    Command::new(exe)
-        .current_dir(exe.parent().unwrap_or(Path::new(".")))
-        .spawn()
-        .map(|_| ())
-        .map_err(|e| format!("{}: {} ({e})", exe.display(), crate::i18n::tr("could not be started", "nešlo spustit")))
+    /// ERROR_ELEVATION_REQUIRED: the program asks for administrator rights in its manifest (HeMiMizer)
+    const ELEVATION_REQUIRED: i32 = 740;
+    let dir = exe.parent().unwrap_or(Path::new("."));
+    match Command::new(exe).current_dir(dir).spawn() {
+        Ok(_) => Ok(()),
+        // started through the shell instead: Windows asks for the rights (UAC) as on a double-click – on its own thread,
+        // the window does not wait for the answer (No is no error; another failure goes to the log)
+        Err(e) if e.raw_os_error() == Some(ELEVATION_REQUIRED) => {
+            let (exe, dir) = (exe.to_path_buf(), dir.to_path_buf());
+            std::thread::spawn(move || {
+                if let Err(e) = shell_start(&exe, &dir)
+                    && e != CANCELLED
+                {
+                    crate::log::write(e);
+                }
+            });
+            Ok(())
+        }
+        Err(e) => Err(format!("{}: {} ({e})", exe.display(), crate::i18n::tr("could not be started", "nešlo spustit"))),
+    }
+}
+
+/// A program started by the shell (ShellExecute "open"): its manifest decides about administrator rights.
+fn shell_start(exe: &Path, dir: &Path) -> Result<(), String> {
+    use windows_sys::Win32::UI::Shell::ShellExecuteW;
+    use windows_sys::Win32::UI::WindowsAndMessaging::SW_SHOWNORMAL;
+    let wide = |s: &str| crate::reg::wide(s);
+    let (verb, file, folder) = (wide("open"), wide(&exe.display().to_string()), wide(&dir.display().to_string()));
+    // SAFETY: the three strings are NUL-ended and live until the call returns; the window and the parameters may be
+    // null by the API.
+    let r = unsafe { ShellExecuteW(std::ptr::null_mut(), verb.as_ptr(), file.as_ptr(), std::ptr::null(), folder.as_ptr(), SW_SHOWNORMAL) };
+    // above 32 started; 5 (access denied) is also the answer when the user said No to UAC
+    match r as isize {
+        n if n > 32 => Ok(()),
+        5 => Err(CANCELLED.into()),
+        n => Err(format!("{}: {} ({n})", exe.display(), crate::i18n::tr("could not be started", "nešlo spustit"))),
+    }
 }
 
 /// The launcher updates itself: installed – its installer quietly (it starts the launcher again); portable – the new

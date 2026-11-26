@@ -37,7 +37,7 @@ Windows 10 / 11, x64 and ARM64. Nothing else needs to be installed.
   (*Developer mode → Load unpacked*), later updates replace it in place (then ⟳ in the browser).
 - **HeMi Dark** goes straight into VLC: the skins into its skins folder, turned on in its settings; pick the color and the
   size in its card (VLC must be closed meanwhile). Removing it brings back the interface VLC had before.
-- **In the background**: after the start and every 4 hours it looks for new versions, shows a Windows notification, and can
+- **In the background**: after the start and then as often as you set (every 1–24 hours) it looks for new versions, shows a Windows notification, and can
   install them by itself (off by default – an app installed for all users is only announced, since its update asks for
   administrator rights). Closing the window hides it in the notification area; it can start with Windows.
 - **Checked downloads**: every installer, exe and zip is compared with `SHA256SUMS.txt` of its release while it downloads,

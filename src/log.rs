@@ -1,7 +1,9 @@
 //! The log of HeMi Launcher (Settings → Logging, off unless switched on): what it checks, downloads, installs and what
 //! failed, in %AppData%\HeMi\HeMiLauncher\log.txt. No personal data: the folders of the user are written as
 //! %USERPROFILE%, %AppData% and %LocalAppData%, the user name in other paths as <user> (the launcher has no tokens or
-//! passwords). At 1 MB the file becomes log.old.txt (the one before is removed) and a new one starts.
+//! passwords). At most 1 MB: then the older half goes (log.old.txt of 1.6.0 is removed).
+//! The same in all HeMi apps: %AppData%\HeMi\<app>\log.txt, the local time, at most 1 MB (then the older half goes), the
+//! folders of the user written as %USERPROFILE%, %AppData% and %LocalAppData%.
 
 use std::io::Write;
 use std::path::PathBuf;
@@ -11,7 +13,7 @@ use std::sync::atomic::{AtomicBool, Ordering};
 static ON: AtomicBool = AtomicBool::new(false);
 /// One writer at a time (the jobs run on their own threads).
 static WRITING: Mutex<()> = Mutex::new(());
-const LIMIT: u64 = 1024 * 1024;
+const LIMIT: usize = 1024 * 1024;
 
 pub fn file() -> PathBuf {
     crate::settings::data_dir().join("log.txt")
@@ -38,39 +40,42 @@ pub fn write(text: impl AsRef<str>) {
     }
     let _one = WRITING.lock().unwrap_or_else(|e| e.into_inner());
     let f = file();
-    if std::fs::metadata(&f).is_ok_and(|m| m.len() >= LIMIT) {
-        let old = f.with_file_name("log.old.txt");
-        // cleaning up: the log before the last one
-        let _ = std::fs::remove_file(&old);
-        let _ = std::fs::rename(&f, &old);
-    }
+    // 1.6.0 kept the log before as log.old.txt
+    let _ = std::fs::remove_file(f.with_file_name("log.old.txt"));
     if let Some(dir) = f.parent() {
         let _ = std::fs::create_dir_all(dir);
     }
+    let entry = format!("{} {}\r\n", now(), scrub(text.as_ref()));
+    if std::fs::metadata(&f).is_ok_and(|m| m.len() as usize + entry.len() > LIMIT)
+        && let Ok(old) = std::fs::read(&f)
+    {
+        let _ = std::fs::write(&f, newer_half(&old));
+    }
     if let Ok(mut out) = std::fs::OpenOptions::new().create(true).append(true).open(&f) {
-        let _ = writeln!(out, "{} {}", now(), scrub(text.as_ref()));
+        let _ = out.write_all(entry.as_bytes());
     }
 }
 
-/// The time in UTC ("2026-11-26 14:03:05Z") – without a library for dates.
-fn now() -> String {
-    let secs = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map(|d| d.as_secs()).unwrap_or(0) as i64;
-    let (y, m, d) = civil(secs.div_euclid(86_400));
-    let t = secs.rem_euclid(86_400);
-    format!("{y:04}-{m:02}-{d:02} {:02}:{:02}:{:02}Z", t / 3600, t / 60 % 60, t % 60)
+/// The newer half of the log, from the start of a line.
+fn newer_half(log: &[u8]) -> &[u8] {
+    let keep = LIMIT / 2;
+    if log.len() <= keep {
+        return log;
+    }
+    let tail = &log[log.len() - keep..];
+    tail.iter().position(|&b| b == b'\n').map_or(&[][..], |i| &tail[i + 1..])
 }
 
-/// The date of a day counted from 1970-01-01 (the algorithm of Howard Hinnant).
-fn civil(days: i64) -> (i64, i64, i64) {
-    let z = days + 719_468;
-    let era = z.div_euclid(146_097);
-    let doe = z - era * 146_097;
-    let yoe = (doe - doe / 1460 + doe / 36_524 - doe / 146_096) / 365;
-    let doy = doe - (365 * yoe + yoe / 4 - yoe / 100);
-    let mp = (5 * doy + 2) / 153;
-    let d = doy - (153 * mp + 2) / 5 + 1;
-    let m = if mp < 10 { mp + 3 } else { mp - 9 };
-    (yoe + era * 400 + i64::from(m <= 2), m, d)
+/// "2026-11-26 14:05:09" in the local time.
+fn now() -> String {
+    use windows_sys::Win32::System::SystemInformation::GetLocalTime;
+    // SAFETY: GetLocalTime only fills the plain struct it is given.
+    let t = unsafe {
+        let mut t = std::mem::zeroed();
+        GetLocalTime(&mut t);
+        t
+    };
+    format!("{:04}-{:02}-{:02} {:02}:{:02}:{:02}", t.wYear, t.wMonth, t.wDay, t.wHour, t.wMinute, t.wSecond)
 }
 
 /// One line without the folders and the name of the user.
@@ -117,10 +122,12 @@ mod tests {
     use super::*;
 
     #[test]
-    fn counts_the_dates() {
-        assert_eq!(civil(0), (1970, 1, 1));
-        assert_eq!(civil(11_017), (2000, 3, 1));
-        assert_eq!(civil(20_418), (2025, 11, 26));
+    fn the_newer_half_starts_a_line() {
+        let line = "2026-11-26 14:05:09 a line of the log\r\n";
+        let old = line.repeat(LIMIT / line.len() + 10);
+        let kept = newer_half(old.as_bytes());
+        assert!(kept.len() <= LIMIT / 2 && kept.starts_with(b"2026"));
+        assert_eq!(newer_half(b"short\n"), b"short\n");
     }
 
     #[test]

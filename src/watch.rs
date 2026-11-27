@@ -71,8 +71,8 @@ impl Ctx {
             let st = self.state.lock().unwrap();
             st.releases.iter().map(|(id, r)| (*id, Ok(r.clone()))).collect()
         };
-        let dir = self.settings.lock().unwrap().portable();
-        let ups = jobs::updates(&releases, &dir);
+        let settings = self.settings.lock().unwrap().clone();
+        let ups = jobs::updates(&releases, &settings);
         crate::notify::write_updates(&ups);
         crate::tray::set_tip(&tip(ups.len()));
         ups
@@ -183,7 +183,7 @@ impl Ctx {
             drop(st);
             self.repaint();
         };
-        let dir = self.settings.lock().unwrap().portable();
+        let dir = self.settings.lock().unwrap().portable_for(id);
         let before = catalog::installed(app);
         let had = catalog::portable(app, &dir);
         // HeMiMizer: only downloaded while its latest release has no installer
@@ -202,7 +202,8 @@ impl Ctx {
                 if had.is_some() {
                     format!("{} {} {} {}", app.name, tr("updated to", "aktualizován na"), release.version, tr("(portable)", "(portable verze)"))
                 } else {
-                    format!("{} – {} {}", app.name, tr("portable version in", "portable verze v"), dir.join(app.id).display())
+                    let at = catalog::portable(app, &dir).map(|p| p.exe(app)).unwrap_or_else(|| dir.clone());
+                    format!("{} – {} {}", app.name, tr("portable version in", "portable verze v"), at.display())
                 }
             }),
             catalog::Kind::App => jobs::install(app, &release, before.as_ref(), progress).map(|()| {
@@ -266,7 +267,7 @@ impl Ctx {
             self.repaint();
             return;
         }
-        let dir = if app.kind == catalog::Kind::Extension { catalog::extension_base() } else { self.settings.lock().unwrap().portable() };
+        let dir = if app.kind == catalog::Kind::Extension { catalog::extension_base() } else { self.settings.lock().unwrap().portable_for(id) };
         let r = jobs::remove_portable(app, &dir);
         crate::log::write(format!("{id}: remove the portable version – {}", r.as_ref().map_or_else(|e| format!("failed – {e}"), |()| "done".into())));
         if let Err(e) = r {

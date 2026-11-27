@@ -215,11 +215,13 @@ mod tests {
 /// The file the launcher leaves in a portable folder: the version it unpacked there.
 pub const PORTABLE_VERSION: &str = "hemilauncher-version.txt";
 
-/// A portable version in the launcher's folder (`dir\<Id>`).
+/// A portable version: in the launcher's folder (`dir\<Id>`), or a program of one file saved right in the chosen folder
+/// (`dir\<App>.exe`, `single`).
 #[derive(Clone, Debug, PartialEq)]
 pub struct Portable {
     pub version: String,
     pub folder: PathBuf,
+    pub single: bool,
 }
 
 impl Portable {
@@ -239,12 +241,65 @@ pub fn portable(app: &AppInfo, dir: &std::path::Path) -> Option<Portable> {
     let dir = if app.kind == Kind::Extension { base.as_path() } else { dir };
     // HeMi Dark: the skins in the folder of VLC
     if app.kind == Kind::Files {
-        return crate::vlc::installed().map(|version| Portable { version, folder: crate::vlc::folder() });
+        return crate::vlc::installed().map(|version| Portable { version, folder: crate::vlc::folder(), single: false });
     }
     if app.kind != Kind::App && app.kind != Kind::Extension {
         return None;
     }
     let folder = dir.join(app.id);
-    let version = std::fs::read_to_string(folder.join(PORTABLE_VERSION)).ok()?.trim().to_string();
-    folder.join(app.exe).exists().then_some(Portable { version, folder })
+    if let Ok(v) = std::fs::read_to_string(folder.join(PORTABLE_VERSION))
+        && folder.join(app.exe).exists()
+    {
+        return Some(Portable { version: v.trim().to_string(), folder, single: false });
+    }
+    // a program of one file: the exe itself, its version from the exe (the HeMi apps all have it)
+    let exe = dir.join(app.exe);
+    if app.kind == Kind::App && exe.is_file() {
+        return file_version(&exe).map(|version| Portable { version, folder: dir.to_path_buf(), single: true });
+    }
+    None
+}
+
+/// The version an exe carries ("1.6.1" of its file version 1.6.1.0); None when it has none.
+pub fn file_version(exe: &std::path::Path) -> Option<String> {
+    use std::os::windows::ffi::OsStrExt;
+    use windows_sys::Win32::Storage::FileSystem::{GetFileVersionInfoSizeW, GetFileVersionInfoW, VS_FIXEDFILEINFO, VerQueryValueW};
+    let wide: Vec<u16> = exe.as_os_str().encode_wide().chain(std::iter::once(0)).collect();
+    // SAFETY: `wide` is NUL-ended; the buffer is as big as GetFileVersionInfoSizeW asked for; VerQueryValueW points `p`
+    // into that buffer (alive while read) and gives its length, read only when it holds a whole VS_FIXEDFILEINFO.
+    unsafe {
+        let size = GetFileVersionInfoSizeW(wide.as_ptr(), std::ptr::null_mut());
+        if size == 0 {
+            return None;
+        }
+        let mut buf = vec![0u8; size as usize];
+        if GetFileVersionInfoW(wide.as_ptr(), 0, size, buf.as_mut_ptr().cast()) == 0 {
+            return None;
+        }
+        let root: [u16; 2] = [b'\\' as u16, 0];
+        let mut p: *mut core::ffi::c_void = std::ptr::null_mut();
+        let mut len = 0u32;
+        if VerQueryValueW(buf.as_ptr().cast(), root.as_ptr(), &mut p, &mut len) == 0 || p.is_null() || (len as usize) < size_of::<VS_FIXEDFILEINFO>() {
+            return None;
+        }
+        let fi = &*(p as *const VS_FIXEDFILEINFO);
+        if fi.dwSignature != 0xFEEF_04BD {
+            return None;
+        }
+        Some(format!("{}.{}.{}", fi.dwFileVersionMS >> 16, fi.dwFileVersionMS & 0xFFFF, fi.dwFileVersionLS >> 16))
+    }
+}
+
+#[cfg(test)]
+mod version_live {
+    /// By hand only: `cargo test --release file_version_live -- --ignored --nocapture` – the versions of the installed HeMi exes.
+    #[test]
+    #[ignore]
+    fn file_version_live() {
+        let base = std::path::PathBuf::from(std::env::var("LOCALAPPDATA").unwrap()).join(r"Programs\HeMi");
+        for e in std::fs::read_dir(base).unwrap().flatten() {
+            let exe = e.path().join(format!("{}.exe", e.file_name().to_string_lossy()));
+            println!("{} → {:?}", exe.display(), super::file_version(&exe));
+        }
+    }
 }

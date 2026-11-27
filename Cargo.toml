@@ -1,6 +1,6 @@
 [package]
 name = "hemilauncher"
-version = "1.6.1"
+version = "1.6.2"
 edition = "2024"
 description = "HeMi Launcher – installs and updates the HeMi apps for Windows"
 authors = ["Richard Hemala"]
@@ -22,6 +22,7 @@ windows-sys = { version = "0.61.2", features = [
     "Win32_Foundation",
     "Win32_Globalization",
     "Win32_Security",
+    "Win32_Storage_FileSystem",
     "Win32_System_Registry",
     "Win32_System_SystemInformation",
     "Win32_System_Com",

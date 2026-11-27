@@ -37,6 +37,85 @@ pub fn found() -> Vec<Browser> {
     out
 }
 
+/// The folders of the data of every Chromium browser of the user (Chrome and its Beta/Dev/Canary, Edge, Brave, Vivaldi,
+/// Opera and Opera GX, Chromium, Yandex, Thorium, Arc…): a folder with the browser's `Local State`, up to three levels
+/// under %LocalAppData% and %AppData% (Arc: in its package). Their profiles (`Default`, `Profile 1`…) are inside; Opera's
+/// is a profile itself. Found once a run.
+fn data_dirs() -> &'static [PathBuf] {
+    static DIRS: std::sync::OnceLock<Vec<PathBuf>> = std::sync::OnceLock::new();
+    DIRS.get_or_init(|| {
+        fn walk(dir: &Path, depth: u32, out: &mut Vec<PathBuf>) {
+            if dir.join("Local State").is_file() {
+                out.push(dir.to_path_buf());
+                return;
+            }
+            if depth == 0 {
+                return;
+            }
+            let Ok(rd) = std::fs::read_dir(dir) else { return };
+            for e in rd.flatten() {
+                // real folders only (no junctions like "Application Data")
+                if e.file_type().map(|t| t.is_dir() && !t.is_symlink()).unwrap_or(false) {
+                    walk(&e.path(), depth - 1, out);
+                }
+            }
+        }
+        let mut out = Vec::new();
+        for var in ["LOCALAPPDATA", "APPDATA"] {
+            if let Some(base) = std::env::var_os(var).map(PathBuf::from) {
+                walk(&base, 3, &mut out);
+            }
+        }
+        // browsers from the Store / MSIX (Arc): Packages\<package>\LocalCache\Local\<browser>\User Data
+        if let Some(pk) = std::env::var_os("LOCALAPPDATA").map(|l| PathBuf::from(l).join("Packages")) {
+            for e in std::fs::read_dir(pk).into_iter().flatten().flatten() {
+                walk(&e.path().join(r"LocalCache\Local"), 2, &mut out);
+            }
+        }
+        out
+    })
+}
+
+/// Whether a browser profile has loaded the unpacked extension from `folder`: the browser keeps its path in
+/// `Secure Preferences` (or `Preferences`) of the profile and drops it when the extension is removed.
+fn loaded_now(folder: &Path) -> bool {
+    // the path as JSON writes it: "C:\\Users\\…\\HeMiTube"
+    let needle = format!("\"path\":\"{}\"", folder.display().to_string().replace('\\', "\\\\")).to_lowercase();
+    let has = |dir: &Path| {
+        ["Secure Preferences", "Preferences"]
+            .iter()
+            .any(|f| std::fs::read(dir.join(f)).map(|b| String::from_utf8_lossy(&b).to_lowercase().contains(&needle)).unwrap_or(false))
+    };
+    // the profiles: the folder itself (Opera), "Default", "Profile 1"…
+    let profile = |e: &std::fs::DirEntry| {
+        let n = e.file_name().to_string_lossy().to_string();
+        e.file_type().map(|t| t.is_dir()).unwrap_or(false) && (n == "Default" || n.starts_with("Profile "))
+    };
+    data_dirs().iter().any(|d| has(d) || std::fs::read_dir(d).map(|rd| rd.flatten().any(|e| profile(&e) && has(&e.path()))).unwrap_or(false))
+}
+
+/// Finds the data folders ahead (a quarter of a second), so the first frame does not wait for it.
+pub fn warm() {
+    data_dirs();
+}
+
+/// [`loaded_now`], read again at most every few seconds (the cards are drawn every frame).
+pub fn loaded(folder: &Path) -> bool {
+    use std::sync::Mutex;
+    use std::time::{Duration, Instant};
+    static CACHE: Mutex<Option<(Instant, PathBuf, bool)>> = Mutex::new(None);
+    let mut c = CACHE.lock().unwrap_or_else(|e| e.into_inner());
+    if let Some((at, f, v)) = c.as_ref()
+        && f == folder
+        && at.elapsed() < Duration::from_secs(4)
+    {
+        return *v;
+    }
+    let v = loaded_now(folder);
+    *c = Some((Instant::now(), folder.to_path_buf(), v));
+    v
+}
+
 fn esc(s: &str) -> String {
     s.replace('&', "&amp;").replace('<', "&lt;").replace('>', "&gt;").replace('"', "&quot;")
 }
@@ -151,5 +230,16 @@ mod live {
         println!("{:?}", all.iter().map(|b| (b.name, b.exe.display().to_string())).collect::<Vec<_>>());
         let folder = crate::catalog::extension_base().join("HeMiTube");
         super::open_guide(&all[0], &folder).unwrap();
+    }
+
+    /// By hand only: `cargo test --release loaded_live -- --ignored --nocapture` – the data folders found and whether HeMiTube is loaded.
+    #[test]
+    #[ignore]
+    fn loaded_live() {
+        let t = std::time::Instant::now();
+        println!("{:#?} ({:?})", super::data_dirs(), t.elapsed());
+        let folder = crate::catalog::extension_base().join("HeMiTube");
+        let t = std::time::Instant::now();
+        println!("{} loaded: {} ({:?})", folder.display(), super::loaded_now(&folder), t.elapsed());
     }
 }

@@ -18,21 +18,21 @@ pub fn check(by_user: bool) -> Releases {
     APPS.iter().chain(std::iter::once(&LAUNCHER)).map(|a| (a.id, github::latest(a.id, by_user))).collect()
 }
 
-/// The version of an app on this PC: installed, else portable (in `portable_dir`).
-pub fn current(app: &AppInfo, portable_dir: &Path) -> Option<String> {
+/// The version of an app on this PC: installed, else portable (in its folder of `settings`).
+pub fn current(app: &AppInfo, settings: &crate::settings::Settings) -> Option<String> {
     if app.id == LAUNCHER.id {
         return Some(env!("CARGO_PKG_VERSION").to_string());
     }
-    catalog::installed(app).map(|i| i.version).or_else(|| catalog::portable(app, portable_dir).map(|p| p.version))
+    catalog::installed(app).map(|i| i.version).or_else(|| catalog::portable(app, &settings.portable_for(app.id)).map(|p| p.version))
 }
 
 /// The apps on this PC that have a newer version (the launcher too).
-pub fn updates(releases: &Releases, portable_dir: &Path) -> Vec<(&'static str, String)> {
+pub fn updates(releases: &Releases, settings: &crate::settings::Settings) -> Vec<(&'static str, String)> {
     let mut out = Vec::new();
     for (id, r) in releases {
         let Ok(r) = r else { continue };
         let Some(app) = find(id) else { continue };
-        if let Some(v) = current(app, portable_dir)
+        if let Some(v) = current(app, settings)
             && catalog::newer(&r.version, &v)
         {
             out.push((*id, r.version.clone()));
@@ -222,6 +222,10 @@ pub fn install_portable(app: &AppInfo, release: &Release, dir: &Path, progress: 
         ));
     }
     let name = portable_asset(app, release);
+    // a program of one file: only the exe, right in the folder – unless it is kept in its own folder from before
+    if app.kind == catalog::Kind::App && name.ends_with(".exe") && !target.join(catalog::PORTABLE_VERSION).exists() {
+        return install_single(app, release, &name, dir, progress);
+    }
     let zip = temp().join(&name);
     let lock = fetch(release, &name, &zip, progress)?;
     // cleaning up: a .new left by an earlier try (it has the version file, checked above)
@@ -259,9 +263,51 @@ pub fn install_portable(app: &AppInfo, release: &Release, dir: &Path, progress: 
     Ok(())
 }
 
-/// Removes the portable version (only a folder the launcher made – it has the version file).
+/// A program of one file as `dir\<App>.exe`: downloaded, copied next to it as `.new`, then swapped with the old one
+/// (which must not be running). Never over an exe of that name without a version (not a HeMi app).
+fn install_single(app: &AppInfo, release: &Release, name: &str, dir: &Path, progress: impl FnMut(f32)) -> Result<(), String> {
+    let tr = crate::i18n::tr;
+    let dest = dir.join(app.exe);
+    let new = dir.join(format!("{}.new", app.exe));
+    let old = dir.join(format!("{}.old", app.exe));
+    if dest.exists() && catalog::file_version(&dest).is_none() {
+        return Err(format!("{}: {}", dest.display(), tr("a file of that name is already there – move or rename it first", "soubor toho jména tam už je – nejdřív ho přesuň nebo přejmenuj")));
+    }
+    // running: Windows lets a running exe be renamed but not written – asked before downloading
+    if dest.exists() && std::fs::OpenOptions::new().write(true).open(&dest).is_err() {
+        return Err(format!("{} – {}", app.name, tr("close it first, it is running", "nejdřív ji zavři, běží")));
+    }
+    let file = temp().join(name);
+    let lock = fetch(release, name, &file, progress)?;
+    std::fs::create_dir_all(dir).map_err(|e| format!("{}: {e}", dir.display()))?;
+    let copied = std::fs::copy(&file, &new);
+    drop(lock);
+    // cleaning up: the download
+    let _ = std::fs::remove_file(&file);
+    copied.map_err(|e| format!("{}: {e}", new.display()))?;
+    if dest.exists() {
+        let _ = std::fs::remove_file(&old);
+        if std::fs::rename(&dest, &old).is_err() {
+            let _ = std::fs::remove_file(&new);
+            return Err(format!("{} – {}", app.name, tr("close it first, it is running", "nejdřív ji zavři, běží")));
+        }
+    }
+    if let Err(e) = std::fs::rename(&new, &dest) {
+        let _ = std::fs::rename(&old, &dest);
+        let _ = std::fs::remove_file(&new);
+        return Err(e.to_string());
+    }
+    let _ = std::fs::remove_file(&old);
+    Ok(())
+}
+
+/// Removes the portable version: a folder the launcher made (it has the version file), or the one exe of a program.
 pub fn remove_portable(app: &AppInfo, dir: &Path) -> Result<(), String> {
     let folder = dir.join(app.id);
+    let exe = dir.join(app.exe);
+    if !folder.join(catalog::PORTABLE_VERSION).exists() && catalog::file_version(&exe).is_some() {
+        return std::fs::remove_file(&exe).map_err(|_| format!("{} – {}", app.name, crate::i18n::tr("close it first, it is running", "nejdřív ji zavři, běží")));
+    }
     if !folder.join(catalog::PORTABLE_VERSION).exists() {
         return Err(crate::i18n::tr("The folder was not made by HeMi Launcher.", "Složku nevytvořil HeMi Launcher.").into());
     }

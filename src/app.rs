@@ -39,6 +39,8 @@ enum Action {
     Open(&'static str),
     Uninstall(&'static str),
     InstallPortable(&'static str),
+    /// Portable for the first time: asks where to save it, then downloads it there.
+    PickAndInstallPortable(&'static str),
     RemovePortable(&'static str),
     PickPortableDir,
     ClearPortableDir,
@@ -104,6 +106,8 @@ impl LauncherApp {
     pub fn new(cc: &eframe::CreationContext<'_>, hidden: bool) -> Self {
         let look = crate::look::Look::load();
         crate::i18n::set(look.language);
+        // the browsers' data folders (for "HeMiTube already in a browser") found while the window opens
+        std::thread::spawn(crate::browsers::warm);
         let source = theme::read_source(look.theme);
         let p = theme::palette(&source);
         theme::install_fonts(&cc.egui_ctx);
@@ -158,8 +162,8 @@ impl LauncherApp {
 
     fn read_installed(&mut self) {
         self.installed = APPS.iter().map(|a| (a.id, catalog::installed(a))).collect();
-        let dir = self.c.settings.lock().unwrap().portable();
-        self.portable = APPS.iter().map(|a| (a.id, catalog::portable(a, &dir))).collect();
+        let s = self.c.settings.lock().unwrap().clone();
+        self.portable = APPS.iter().map(|a| (a.id, catalog::portable(a, &s.portable_for(a.id)))).collect();
         self.vlc_choices = crate::vlc::choices();
         self.vlc_now = crate::vlc::current();
         self.installed_read = Instant::now();
@@ -411,6 +415,8 @@ impl LauncherApp {
             (Some(v), Some(r)) => catalog::newer(&r.version, v),
             _ => false,
         };
+        // the extension already loaded in a browser: no "Add to browser" then
+        let in_browser = kind == Kind::Extension && portable.is_some() && crate::browsers::loaded(&catalog::extension_base().join(a.id));
         let frame = egui::Frame::new()
             .fill(p.card)
             .stroke(egui::Stroke::new(1.0, if update { p.accent } else { p.card_stroke }))
@@ -429,6 +435,7 @@ impl LauncherApp {
                         (Some(i), _) if i.all_users => tr("Installed for all users", "Nainstalováno pro všechny uživatele"),
                         (Some(_), _) => tr("Installed", "Nainstalováno"),
                         (None, Some(_)) if kind == Kind::Files => tr("In VLC", "Ve VLC"),
+                        (None, Some(_)) if in_browser => tr("In the browser", "V prohlížeči"),
                         (None, Some(_)) if kind == Kind::Extension => tr("Unpacked", "Rozbaleno"),
                         (None, Some(_)) => "Portable",
                         _ if kind == Kind::Extension => tr("Browser extension", "Rozšíření prohlížeče"),
@@ -490,6 +497,8 @@ impl LauncherApp {
                     if Btn::new(tr("Update", "Aktualizovat")).accent().show(ui, &p).clicked() {
                         acts.push(if portable.is_some() { Action::InstallPortable(a.id) } else { Action::Install(a.id) });
                     }
+                } else if have.is_some() && kind == Kind::Extension && in_browser {
+                    // loaded in a browser already: only the icons on the right
                 } else if have.is_some() && kind == Kind::Extension {
                     // the browser: one found – the guide opens there; more – a list to pick from
                     let browsers = crate::browsers::found();
@@ -565,7 +574,7 @@ impl LauncherApp {
                         tr("Saves the portable version to the Downloads folder (or the folder set in Settings)", "Uloží portable verzi do složky Stažené soubory (nebo do složky z Nastavení)")
                     };
                     if Btn::new("Portable").enabled(release.is_some()).tip(tip).show(ui, &p).clicked() {
-                        acts.push(Action::InstallPortable(a.id));
+                        acts.push(Action::PickAndInstallPortable(a.id));
                     }
                 }
                 ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
@@ -774,7 +783,7 @@ impl LauncherApp {
                     ui.with_layout(Layout::left_to_right(Align::Center), |ui| {
                         ui.vertical(|ui| {
                             ui.spacing_mut().item_spacing.y = 1.0;
-                            ui.label(RichText::new(tr("Folder for portable versions", "Složka pro portable verze")).size(14.0).color(p.text));
+                            ui.label(RichText::new(tr("Default folder for portable versions", "Výchozí složka pro portable verze")).size(14.0).color(p.text));
                             ui.add(egui::Label::new(RichText::new(detail).size(12.0).color(p.text2)).truncate());
                         });
                     });
@@ -956,6 +965,23 @@ impl LauncherApp {
                     }
                 }
                 Action::InstallPortable(id) => self.c.spawn(move |c| c.install_portable(id, false)),
+                Action::PickAndInstallPortable(id) => {
+                    let start = self.c.settings.lock().unwrap().portable_for(id);
+                    let mut d = rfd::FileDialog::new().set_title(format!("{} – {}", tr("Where to save the portable version", "Kam uložit portable verzi"), id));
+                    if start.is_dir() {
+                        d = d.set_directory(start);
+                    }
+                    if let Some(dir) = d.pick_folder() {
+                        // remembered for this app: the launcher finds and updates it there
+                        let mut s = self.c.settings.lock().unwrap().clone();
+                        s.portable_dirs.insert(id.to_string(), dir.display().to_string());
+                        if let Err(e) = s.save() {
+                            self.toast(e, Tone::Critical);
+                        }
+                        *self.c.settings.lock().unwrap() = s;
+                        self.c.spawn(move |c| c.install_portable(id, false));
+                    }
+                }
                 Action::RemovePortable(id) => self.c.spawn(move |c| c.remove_portable(id)),
                 Action::PickPortableDir => {
                     let start = self.c.settings.lock().unwrap().portable();

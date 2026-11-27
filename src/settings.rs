@@ -18,13 +18,16 @@ pub struct Settings {
     pub tray_on_close: bool,
     /// Where the portable versions go (empty: the Downloads folder).
     pub portable_dir: String,
+    /// The folder chosen for the portable version of an app when it was downloaded (Id → folder; the user,
+    /// 2026-11-27: Portable asks where to save it). The launcher looks for it and updates it there.
+    pub portable_dirs: std::collections::BTreeMap<String, String>,
     /// What the launcher does written to log.txt in data_dir (log.rs) – off unless switched on.
     pub logging: bool,
 }
 
 impl Default for Settings {
     fn default() -> Self {
-        Settings { auto_check: true, check_hours: 4, auto_install: false, notify: true, tray_on_close: true, portable_dir: String::new(), logging: false }
+        Settings { auto_check: true, check_hours: 4, auto_install: false, notify: true, tray_on_close: true, portable_dir: String::new(), portable_dirs: Default::default(), logging: false }
     }
 }
 
@@ -48,6 +51,11 @@ impl Settings {
     /// Where the portable versions go: the folder chosen in the settings, else the Downloads folder.
     pub fn portable(&self) -> PathBuf {
         if self.portable_dir.trim().is_empty() { downloads() } else { PathBuf::from(self.portable_dir.trim()) }
+    }
+
+    /// Where the portable version of an app is: the folder chosen when it was downloaded, else [`Self::portable`].
+    pub fn portable_for(&self, id: &str) -> PathBuf {
+        self.portable_dirs.get(id).map(|d| PathBuf::from(d.trim())).filter(|d| !d.as_os_str().is_empty()).unwrap_or_else(|| self.portable())
     }
 
     pub fn load() -> Settings {
@@ -98,7 +106,13 @@ impl Settings {
                 "TrayOnClose" => s.tray_on_close = b,
                 "PortableDir" => s.portable_dir = v.trim().to_string(),
                 "Logging" => s.logging = b,
-                _ => {}
+                k => {
+                    if let Some(id) = k.strip_prefix("PortableDir.")
+                        && !v.trim().is_empty()
+                    {
+                        s.portable_dirs.insert(id.to_string(), v.trim().to_string());
+                    }
+                }
             }
         }
         s
@@ -107,7 +121,7 @@ impl Settings {
     /// Writes the settings; the error is for the window to show.
     pub fn save(&self) -> Result<(), String> {
         let b = |v: bool| if v { "1" } else { "0" };
-        let text = format!(
+        let mut text = format!(
             "AutoCheck={}\nCheckHours={}\nAutoInstall={}\nNotify={}\nTrayOnClose={}\nPortableDir={}\nLogging={}\n",
             b(self.auto_check),
             self.check_hours,
@@ -117,6 +131,9 @@ impl Settings {
             self.portable_dir,
             b(self.logging)
         );
+        for (id, dir) in &self.portable_dirs {
+            text.push_str(&format!("PortableDir.{id}={dir}\n"));
+        }
         let failed = |e: std::io::Error| format!("{} ({e})", crate::i18n::tr("The settings could not be saved", "Nastavení nešlo uložit"));
         std::fs::create_dir_all(data_dir()).map_err(failed)?;
         std::fs::write(file(), text).map_err(failed)

@@ -21,7 +21,7 @@ pub struct Settings {
     /// The folder chosen for the portable version of an app when it was downloaded (Id → folder; the user,
     /// 2026-11-27: Portable asks where to save it). The launcher looks for it and updates it there.
     pub portable_dirs: std::collections::BTreeMap<String, String>,
-    /// What the launcher does written to log.txt in data_dir (log.rs) – off unless switched on.
+    /// What the launcher does written to Logs\log-<day>.txt in data_dir (log.rs) – off unless switched on.
     pub logging: bool,
 }
 

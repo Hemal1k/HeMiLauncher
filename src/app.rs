@@ -55,7 +55,7 @@ enum Action {
     VlcSkin(String, u32),
     /// HeMiTube: the guide opened in this browser (index into browsers::found)
     AddToBrowser(usize),
-    /// log.txt in its program (by Explorer)
+    /// the newest log in its program (by Explorer)
     OpenLog,
     /// %AppData%\HeMi\HeMiLauncher in Explorer
     OpenSettingsFolder,
@@ -797,7 +797,7 @@ impl LauncherApp {
             acts.push(Action::Set(Settings { logging: !s.logging, ..s.clone() }));
         }
         let items = [
-            (tr("Open log", "Otevřít log"), r"%AppData%\HeMi\HeMiLauncher\log.txt"),
+            (tr("Open log", "Otevřít log"), r"%AppData%\HeMi\HeMiLauncher\Logs"),
             (tr("Open settings folder", "Otevřít složku nastavení"), r"%AppData%\HeMi\HeMiLauncher"),
         ];
         match card(ui, &p, |ui| crate::widgets::button_row(ui, &p, &items)) {

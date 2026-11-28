@@ -50,8 +50,8 @@ Windows 10 / 11, x64 and ARM64. Nothing else needs to be installed.
 
 It reads the releases on GitHub (`api.github.com`, the TLS of Windows) – nothing else, no accounts, no telemetry. Its settings
 are in `%AppData%\HeMi\HeMiLauncher\settings.ini`. **Logging** (Settings → Troubleshooting, off by default) writes what it
-checks, downloads and installs and what failed to `log.txt` there – without the user's name or folders, at most 1 MB (then
-`log.old.txt`).
+checks, downloads and installs and what failed to `Logs\log-<day>.txt` there – one file a day (a new part after 1 MB),
+kept for a week, without the user's name or folders. Without it no log is written.
 
 Uninstalling removes the launcher, its start with Windows and its notifications, and asks whether to delete its settings.
 What it installed stays: remove the apps and their portable versions, HeMiTube (`%AppData%\HeMi\HeMiTube`) and HeMi Dark

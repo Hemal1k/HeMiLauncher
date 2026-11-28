@@ -847,7 +847,7 @@ dependencies = [
 
 [[package]]
 name = "hemilauncher"
-version = "1.6.2"
+version = "1.6.3"
 dependencies = [
  "eframe",
  "raw-window-handle",

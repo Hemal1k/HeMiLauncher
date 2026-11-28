@@ -21,6 +21,7 @@ mod widgets;
 use eframe::egui;
 
 fn main() -> eframe::Result {
+    log::catch_panics();
     let args: Vec<String> = std::env::args().skip(1).collect();
     // the installer after an installation or a move to another folder: the start with Windows and the path the other
     // HeMi apps know point to this exe
